@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Century Gothic", "CenturyGothic", "AppleGothic", "URW Gothic", sans-serif;
+  --font-serif: "Century Gothic", "CenturyGothic", "AppleGothic", "URW Gothic", sans-serif;
+  --font-gothic: "Century Gothic", "CenturyGothic", "AppleGothic", "URW Gothic", sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: "Century Gothic", "CenturyGothic", "AppleGothic", "URW Gothic", sans-serif;
+    @apply antialiased;
+  }
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-white/70 backdrop-blur-lg border border-white/20 shadow-xl;
+  }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-stone-50;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-emerald-200 rounded-full hover:bg-emerald-300 transition-colors;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Force expansion during PDF export */
+  [data-exporting="true"] .overflow-hidden {
+    height: auto !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+  }
+
+  [data-exporting="true"] textarea {
+    display: none !important;
+  }
+
+  [data-exporting="true"] .export-only {
+    display: block !important;
+  }
+
+  [data-exporting="true"] .no-export {
+    display: none !important;
+  }
+}
