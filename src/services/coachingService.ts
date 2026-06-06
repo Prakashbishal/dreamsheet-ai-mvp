@@ -2,6 +2,7 @@ import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 const model = "gemini-3-flash-preview";
+const AI_FALLBACK_MESSAGE = "AI suggestion could not be generated. Please try again or edit manually.";
 
 export const coachingService = {
   async analyzeQuizResponses(responses: { question: string, answer: string }[]): Promise<{ name: string, description: string }[]> {
@@ -73,7 +74,7 @@ export const coachingService = {
     try {
       return JSON.parse(response.text);
     } catch (e) {
-      return ["General Growth", "Specific Skill", "Habit Building"];
+      return [AI_FALLBACK_MESSAGE];
     }
   },
 
@@ -186,7 +187,7 @@ Return the result as a JSON array of strings, where each string is in the format
       return data.why;
     } catch (e) {
       console.error("Failed to parse suggested domain why", e);
-      return `To achieve balance, fulfillment, and meaningful progress in my ${domainName} domain.`;
+      return AI_FALLBACK_MESSAGE;
     }
   },
 
@@ -379,7 +380,7 @@ Return the result as a JSON object.`;
     try {
       return JSON.parse(response.text);
     } catch (e) {
-      return ["I am achieving my highest potential in this domain.", "My vision is unfolding perfectly.", "I possess the strength and focus to succeed."];
+      return [AI_FALLBACK_MESSAGE];
     }
   },
   
@@ -471,7 +472,7 @@ Return the result as a JSON object.`;
     try {
       return JSON.parse(response.text);
     } catch (e) {
-      return ["Procrastination on tasks", "Lack of clear resources"];
+      return [AI_FALLBACK_MESSAGE];
     }
   },
 
@@ -529,9 +530,7 @@ Return the result as a JSON object.`;
       return JSON.parse(response.text);
     } catch (e) {
       return [
-        { name: "Supporting Goal 1", obstacles: [{ obstacle: "Lack of time", solution: "Prioritize schedule" }, { obstacle: "Fatigue", solution: "Rest well" }] },
-        { name: "Supporting Goal 2", obstacles: [{ obstacle: "Distractions", solution: "Focus techniques" }, { obstacle: "Cost", solution: "Budgeting" }] },
-        { name: "Supporting Goal 3", obstacles: [{ obstacle: "Complexity", solution: "Break down into steps" }, { obstacle: "Fear", solution: "Mindset practice" }] }
+        { name: AI_FALLBACK_MESSAGE, obstacles: [] }
       ];
     }
   },
@@ -712,7 +711,7 @@ Return the result as a JSON object.`;
       return JSON.parse(response.text);
     } catch (e) {
       console.error("Failed to parse AI response", e);
-      const fallbackMsg = "AI suggestion unavailable. Try again or edit manually.";
+      const fallbackMsg = AI_FALLBACK_MESSAGE;
       return {
         suggestedGoals: [fallbackMsg, fallbackMsg, fallbackMsg, fallbackMsg],
         suggestedAffirmations: [fallbackMsg, fallbackMsg, fallbackMsg, fallbackMsg],

@@ -14,6 +14,7 @@ export interface ActionStep {
   task: string;
   startDate?: string;
   endDate?: string;
+  isOngoing?: boolean;
   dueDate?: string; // Keep for backward compatibility/transition
   measure?: string;
   obstacle?: string;

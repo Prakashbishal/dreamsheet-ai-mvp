@@ -141,7 +141,7 @@ const ThinkingRobot = ({ message = "Consulting your AI Coach..." }: { message?: 
         }}
         className="w-32 h-32 bg-emerald-50 rounded-[40px] flex items-center justify-center text-emerald-600 border-2 border-emerald-100 shadow-xl relative overflow-hidden"
       >
-        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-400 to-transparent animate-pulse" />
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-emerald-400 to-transparent animate-pulse"></div>
         <Bot size={64} className="relative z-10" />
         
         {/* Thinking circles */}
@@ -187,7 +187,7 @@ const ActiveDomainHeader = ({ domainName, focusAreas }: { domainName: string, fo
             <span key={i} className="text-lg md:text-xl lg:text-2xl font-light block leading-tight">{fa}</span>
           ))
         ) : (
-          <span className="text-base md:text-lg font-light italic opacity-60">No focus areas defined yet...</span>
+          <span className="text-sm md:text-base font-light italic opacity-80">No focus areas were generated. Please try again or add one manually.</span>
         )}
       </div>
     </div>
@@ -882,11 +882,11 @@ export default function App() {
             return {
               ...s,
               startDate: value,
-              finishDate: newFinish.toISOString().split('T')[0]
+              finishDate: s.isOngoing ? "" : newFinish.toISOString().split('T')[0]
             };
           }
           
-          return { ...s, [field]: value };
+          return { ...s, [field]: value, ...(field === 'finishDate' ? { isOngoing: false } : {}) };
         })
       };
     }));
@@ -915,6 +915,7 @@ export default function App() {
                 overcome: st.overcome,
                 startDate: st.startDate || "",
                 endDate: st.endDate || "",
+                isOngoing: false,
                 progress: 0
               }))
             };
@@ -1794,20 +1795,21 @@ export default function App() {
               <div className="flex items-center gap-3">
                 <img src="/flourish-logo.svg" alt="Flourish logo" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} className="w-10 h-10 object-contain rounded-md bg-white/5 p-1" />
                 <div className="space-y-0.5 text-left">
-                <h1 className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight flex items-baseline select-none">
-                  <span className="relative inline-block mr-1">
-                    DREAM
-                    <span className="absolute -bottom-0.5 left-0 w-full h-[2.5px] bg-[#E11D48] rounded-full" />
-                  </span>
-                  <span className="font-light opacity-80 text-stone-200">sheet AI</span>
-                </h1>
-                <p className="hidden md:block text-[#888888] italic text-[11px] font-light">"The best way to predict the future is to make it up"</p>
+                  <h1 className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight flex items-baseline select-none">
+                    <span className="relative inline-block mr-1">
+                      DREAM
+                      <span className="absolute -bottom-0.5 left-0 w-full h-[2.5px] bg-[#E11D48] rounded-full" />
+                    </span>
+                    <span className="font-light opacity-80 text-stone-200">sheet AI</span>
+                  </h1>
+                  <p className="hidden md:block text-[#888888] italic text-[11px] font-light">"The best way to predict the future is to make it up"</p>
+                </div>
               </div>
 
               {/* Official Badge for Tablet/Desktop */}
               <div className="hidden lg:flex bg-[#1A1A1A] border border-[#2A2A2A] rounded px-2.5 py-1 items-center gap-2">
                 <div className="w-3.5 h-3.5 rounded-full border border-emerald-500/40 flex items-center justify-center">
-                  <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse" />
+                  <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div>
                 </div>
                 <span className="text-[8px] font-bold tracking-[0.2em] text-[#389167] uppercase">Official Strategic Plan</span>
               </div>
@@ -1865,8 +1867,8 @@ export default function App() {
                       "p-2 rounded-full transition-all border border-white/5",
                       showStepList ? "bg-emerald-600 text-white" : "text-stone-500 hover:text-emerald-500 hover:bg-white/5"
                     )}
-                    title="AI assistant menu"
-                    aria-label="AI assistant menu"
+                    title="Open step menu"
+                    aria-label="Open step menu"
                   >
                     <Bot size={18} />
                   </button>
@@ -1874,7 +1876,7 @@ export default function App() {
                   <AnimatePresence>
                     {showStepList && (
                       <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowStepList(false)} />
+                        <div className="fixed inset-0 z-40" onClick={() => setShowStepList(false)}></div>
                         <motion.div
                           initial={{ opacity: 0, y: 10, scale: 0.95 }}
                           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -1899,7 +1901,7 @@ export default function App() {
                               }}
                               className={cn(
                                 "w-full text-left px-5 py-3 text-[10px] font-bold tracking-widest transition-colors flex items-center justify-between",
-                                step === item.step ? "text-emerald-400 bg-white/5" : "text-stone-500 hover:bg-white/10"
+                                step === item.step ? "text-emerald-400 bg-white/5" : "text-stone-300 hover:bg-white/10"
                               )}
                             >
                               {item.label}
@@ -1932,7 +1934,7 @@ export default function App() {
       <main className={cn("flex-1 relative", "overflow-visible")}>
         <div className={cn(
           "max-w-6xl mx-auto px-4 md:px-6 py-4 md:py-6 flex flex-col w-full animate-fade-in",
-          isNaturalScrollStep ? "min-h-full" : "h-full"
+          isNaturalScrollStep ? "min-h-full" : "min-h-[calc(100vh-88px)]"
         )}>
           {/* Green focus area banner if after Domains step, but before Masterplan & Consolidated plan */}
           {step !== CoachingStep.WELCOME && 
@@ -1975,7 +1977,7 @@ export default function App() {
                     </button>
                   ))
                 ) : (
-                  <span className="text-xs text-stone-500 italic">None selected. Return to Domains step to choose.</span>
+                  <span className="text-xs text-stone-600 italic">No focus areas were generated. Please try again or add one manually.</span>
                 )}
               </div>
             </div>
@@ -1990,7 +1992,7 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="h-full overflow-y-auto flex flex-col justify-center font-gothic custom-scrollbar py-4 md:py-6 space-y-4 md:space-y-6"
+                className="min-h-full overflow-y-auto flex flex-col justify-center font-gothic custom-scrollbar py-4 md:py-6 space-y-4 md:space-y-6"
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 w-full items-center">
                   {/* Left Column: Heading & Distraction Release */}
@@ -2117,7 +2119,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -15 }}
-                className="h-full overflow-y-auto flex flex-col items-center md:items-start text-center md:text-left space-y-3.5 md:space-y-5 max-w-2xl mx-auto p-4 md:p-6 custom-scrollbar pb-6 pt-2 md:pt-4"
+                className="min-h-full overflow-y-auto flex flex-col items-center md:items-start text-center md:text-left space-y-3.5 md:space-y-5 max-w-2xl mx-auto p-4 md:p-6 custom-scrollbar pb-6 pt-2 md:pt-4"
               >
                 <div className="space-y-2 flex flex-col items-center md:items-start w-full">
                   <motion.div
@@ -2246,7 +2248,7 @@ export default function App() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="h-full flex flex-col overflow-hidden"
+                className="min-h-0 flex flex-col overflow-visible md:overflow-hidden"
               >
                 <div className="shrink-0 flex items-start justify-between mb-6 md:mb-8 gap-4 px-4 md:px-8 text-center md:text-left">
                   <div className="flex-1 text-center md:text-left space-y-4 md:space-y-6">
@@ -2348,7 +2350,7 @@ export default function App() {
                                 )}
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-stone-900 text-white text-[10px] rounded-lg opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity z-50 text-center">
                                   {isCompleted ? "Domain Processed & Retained - Click mini 'x' to unlock/delete" : domain.description}
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-stone-900" />
+                                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-stone-900"></div>
                                 </div>
                               </div>
                             );
@@ -2531,7 +2533,7 @@ export default function App() {
                                     >
                                       {isGeneratingDiscoveryObstacles ? (
                                         <>
-                                          <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                                          <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
                                           Thinking...
                                         </>
                                       ) : (
@@ -2602,7 +2604,7 @@ export default function App() {
                                   className="w-full bg-white/60 border border-emerald-100/50 rounded-2xl p-4 md:p-6 text-base md:text-lg font-light text-stone-800 italic focus:ring-2 focus:ring-emerald-500 hover:border-emerald-200 focus:bg-white transition-all min-h-[120px] resize-none leading-relaxed outline-none"
                                 />
                               </div>
-                              <div className="w-12 h-0.5 bg-emerald-200 rounded-full" />
+                              <div className="w-12 h-0.5 bg-emerald-200 rounded-full"></div>
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/60 block">My Why</span>
@@ -2725,7 +2727,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="h-full flex flex-col gap-6 overflow-y-auto"
+                className="min-h-0 flex flex-col gap-4 md:gap-6 overflow-y-auto"
               >
                 <div className="shrink-0 flex flex-col md:flex-row items-center md:items-end justify-between gap-4 text-center md:text-left">
                   <div className="max-w-2xl flex flex-col items-center md:items-start w-full">
@@ -2742,10 +2744,10 @@ export default function App() {
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 pb-8">
                   {activeDomainId && (
-                    <ActiveDomainHeader 
-                      domainName={domains.find(d => d.id === activeDomainId)?.name || ""} 
-                      focusAreas={domains.find(d => d.id === activeDomainId)?.subAreas.map(s => s.name) || []} 
-                    />
+                        <ActiveDomainHeader 
+                          domainName={domains.find(d => d.id === activeDomainId)?.name || ""} 
+                          focusAreas={domains.find(d => d.id === activeDomainId)?.subAreas.map(s => s.name).filter(Boolean) || []} 
+                        />
                   )}
                   {activeDomainId && domains.find(d => d.id === activeDomainId)?.subAreas.length === 0 && (
                     <div className="my-3">
@@ -2853,8 +2855,8 @@ export default function App() {
 
                           <div className="relative w-full max-w-md mx-auto aspect-square bg-stone-50 border border-stone-200 rounded-3xl p-6 shadow-sm overflow-hidden select-none">
                             {/* Crosshair Dividers */}
-                            <div className="absolute left-1/2 top-4 bottom-4 border-l border-dashed border-stone-300 -translate-x-1/2" />
-                            <div className="absolute top-1/2 left-4 right-4 border-t border-dashed border-stone-300 -translate-y-1/2" />
+                            <div className="absolute left-1/2 top-4 bottom-4 border-l border-dashed border-stone-300 -translate-x-1/2"></div>
+                            <div className="absolute top-1/2 left-4 right-4 border-t border-dashed border-stone-300 -translate-y-1/2"></div>
 
                             {/* Outer Axis Labels */}
                             {/* Y-Axis Label (Importance) */}
@@ -2923,7 +2925,7 @@ export default function App() {
                                     
                                     {/* Main Glowing Dot */}
                                     <div className="relative h-4 w-4 rounded-full bg-emerald-600 border-2 border-white shadow-md flex items-center justify-center">
-                                      <div className="h-1.5 w-1.5 rounded-full bg-white" />
+                                      <div className="h-1.5 w-1.5 rounded-full bg-white"></div>
                                     </div>
 
                                     {/* Plotted Label Popup */}
@@ -2951,16 +2953,16 @@ export default function App() {
 
                       {/* Navigation Buttons */}
                       <div className="pt-8 flex flex-col items-center gap-6">
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
                           <button 
                             onClick={() => skipToStep(CoachingStep.DOMAIN)}
-                            className="bg-white border border-stone-200 text-stone-600 px-8 py-5 rounded-2xl font-bold flex items-center gap-3 hover:bg-stone-50 transition-all shadow-xl uppercase tracking-widest text-sm"
+                            className="bg-white border border-stone-200 text-stone-600 px-5 sm:px-8 py-3.5 sm:py-5 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-stone-50 transition-all shadow-xl uppercase tracking-widest text-xs sm:text-sm"
                           >
                             <ChevronLeft size={20} /> Back
                           </button>
                           <button 
                             onClick={() => skipToStep(CoachingStep.END_GOALS)}
-                            className="bg-emerald-600 text-white px-12 py-5 rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-2xl shadow-emerald-600/20 uppercase tracking-widest text-sm"
+                            className="bg-emerald-600 text-white px-6 sm:px-12 py-3.5 sm:py-5 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all shadow-2xl shadow-emerald-600/20 uppercase tracking-widest text-xs sm:text-sm"
                           >
                             Continue to E: End-goals <ChevronRight size={20} />
                           </button>
@@ -2986,26 +2988,26 @@ export default function App() {
                        <Target size={16} />
                        <span className="text-[10px] font-bold uppercase tracking-widest">Step E: End-goals</span>
                     </div>
-                    <h2 className="text-3xl font-light text-stone-900 mb-2 text-center md:text-left">Establish your End-goals.</h2>
+                    <h2 className="text-xl sm:text-2xl md:text-3xl font-light text-stone-900 mb-2 text-center md:text-left">Establish your End-goals.</h2>
                     <p className="text-stone-600 text-sm text-center md:text-left">
                       Create an End-goal for each of your sub-domains in <b>{domains.find(d => d.id === activeDomainId)?.name}</b>.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto pr-2 space-y-8 custom-scrollbar pb-8">
+                <div className="flex-1 overflow-y-auto pr-0 md:pr-2 space-y-6 md:space-y-8 custom-scrollbar pb-8">
                   {activeDomainId && (
                     <div className="max-w-3xl mx-auto">
                       <ActiveDomainHeader 
                         domainName={domains.find(d => d.id === activeDomainId)?.name || ""} 
-                        focusAreas={domains.find(d => d.id === activeDomainId)?.subAreas.map(s => s.name) || []} 
+                        focusAreas={domains.find(d => d.id === activeDomainId)?.subAreas.map(s => s.name).filter(Boolean) || []} 
                       />
                     </div>
                   )}
                   {domains.filter(d => d.id === activeDomainId).map(d => (
                     <div key={d.id} className="space-y-6 max-w-3xl mx-auto">
                       {d.subAreas.map((sub, idx) => (
-                        <div key={sub.id} className="bg-white p-8 rounded-3xl shadow-sm border border-stone-200 space-y-6">
+                        <div key={sub.id} className="bg-white p-4 sm:p-6 md:p-8 rounded-3xl shadow-sm border border-stone-200 space-y-5 md:space-y-6">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-bold text-emerald-600 tracking-wider shrink-0">Focus Area #{idx + 1}</span>
@@ -3045,7 +3047,7 @@ export default function App() {
                                 };
                               }))}
                               placeholder="What specific outcome do you want to achieve for this focus area?"
-                              className="w-full bg-stone-50 border border-stone-100 rounded-2xl p-6 text-base md:text-lg font-light italic focus:ring-2 focus:ring-emerald-500 transition-all min-h-[120px] resize-none leading-relaxed"
+                              className="w-full bg-stone-50 border border-stone-100 rounded-2xl p-4 md:p-6 text-sm sm:text-base md:text-lg font-light italic focus:ring-2 focus:ring-emerald-500 transition-all min-h-[120px] resize-none leading-relaxed"
                             />
                           </div>
 
@@ -3115,7 +3117,7 @@ export default function App() {
                               }]
                             };
                           }))}
-                          className="w-full py-4 border-2 border-dashed border-stone-200 rounded-2xl text-stone-400 hover:border-emerald-300 hover:text-emerald-600 transition-all flex items-center justify-center gap-2 font-bold text-xs uppercase tracking-widest"
+                          className="w-full py-3 md:py-4 border-2 border-dashed border-stone-200 rounded-2xl text-stone-400 hover:border-emerald-300 hover:text-emerald-600 transition-all flex items-center justify-center gap-2 font-bold text-xs uppercase tracking-widest"
                         >
                           <Plus size={16} /> Add {d.subAreas.length === 0 ? 'a' : 'another'} End-goal
                         </button>
@@ -3150,10 +3152,10 @@ export default function App() {
                       </div>
 
                       <div className="flex justify-center pt-8">
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
                           <button 
                             onClick={() => skipToStep(CoachingStep.RATINGS)}
-                            className="bg-white border border-stone-200 text-stone-600 px-8 py-5 rounded-2xl font-bold flex items-center gap-3 hover:bg-stone-50 transition-all shadow-xl uppercase tracking-widest text-sm"
+                            className="bg-white border border-stone-200 text-stone-600 px-5 sm:px-8 py-3.5 sm:py-5 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-stone-50 transition-all shadow-xl uppercase tracking-widest text-xs sm:text-sm"
                           >
                             <ChevronLeft size={20} /> Back
                           </button>
@@ -3177,7 +3179,7 @@ export default function App() {
                 key="affirmations"
                 initial={{ opacity: 0, scale: 0.98 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="h-full flex flex-col gap-8 overflow-hidden"
+                className="min-h-0 flex flex-col gap-4 md:gap-8 overflow-visible md:overflow-hidden"
               >
                 <div className="flex flex-col md:flex-row items-center md:items-end justify-between gap-4 shrink-0 text-center md:text-left">
                   <div className="max-w-2xl flex flex-col items-center md:items-start w-full">
@@ -3185,26 +3187,26 @@ export default function App() {
                        <Sparkles size={18} />
                        <span className="text-[10px] font-bold uppercase tracking-widest">Step A: Affirmations</span>
                     </div>
-                    <h2 className="text-3xl font-light text-stone-900 mb-1 text-center md:text-left">Empower your vision.</h2>
+                    <h2 className="text-xl sm:text-2xl md:text-3xl font-light text-stone-900 mb-1 text-center md:text-left">Empower your vision.</h2>
                     <p className="text-stone-600 text-sm text-center md:text-left">
                       Create or refine a powerful affirmation for each of your End-goals in <b>{domains.find(d => d.id === activeDomainId)?.name}</b>.
                     </p>
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto pr-2 space-y-8 custom-scrollbar pb-8">
+                <div className="flex-1 overflow-y-auto pr-0 md:pr-2 space-y-6 md:space-y-8 custom-scrollbar pb-8">
                   {activeDomainId && (
                     <div className="max-w-4xl mx-auto">
                       <ActiveDomainHeader 
                         domainName={domains.find(d => d.id === activeDomainId)?.name || ""} 
-                        focusAreas={domains.find(d => d.id === activeDomainId)?.subAreas.map(s => s.name) || []} 
+                        focusAreas={domains.find(d => d.id === activeDomainId)?.subAreas.map(s => s.name).filter(Boolean) || []} 
                       />
                     </div>
                   )}
                   {domains.filter(d => d.id === activeDomainId).map(domain => (
                     <div key={domain.id} className="max-w-4xl w-full mx-auto space-y-8">
                       {domain.subAreas.map((sub, idx) => (
-                        <div key={sub.id} className="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm space-y-4">
+                        <div key={sub.id} className="bg-white p-4 sm:p-6 md:p-8 rounded-3xl border border-stone-200 shadow-sm space-y-4">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 pb-3 border-b border-stone-100">
                             <span className="text-[11px] font-black text-emerald-600 uppercase tracking-widest shrink-0">Goal #{idx + 1}:</span>
                             <span className="text-sm font-semibold text-stone-700 leading-normal break-words">{sub.goal || sub.name}</span>
@@ -3236,7 +3238,7 @@ export default function App() {
                                 };
                               }))}
                               placeholder="Write a supportive affirmation for this specific goal..."
-                              className="w-full bg-stone-50 border border-stone-100 rounded-2xl p-6 text-base md:text-lg font-light italic focus:ring-2 focus:ring-emerald-500 transition-all min-h-[100px] resize-none"
+                              className="w-full bg-stone-50 border border-stone-100 rounded-2xl p-4 md:p-6 text-sm sm:text-base md:text-lg font-light italic focus:ring-2 focus:ring-emerald-500 transition-all min-h-[100px] resize-none"
                             />
                           </div>
                         </div>
@@ -3261,7 +3263,7 @@ export default function App() {
                               }
                             }}
                             disabled={domain.subAreas.some(s => !s.affirmation?.trim())}
-                            className="bg-emerald-600 text-white px-12 py-5 rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-2xl shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest text-sm"
+                            className="bg-emerald-600 text-white px-6 sm:px-12 py-3.5 sm:py-5 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all shadow-2xl shadow-emerald-600/20 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest text-xs sm:text-sm"
                           >
                             {domains.findIndex(dom => dom.id === activeDomainId) < domains.length - 1 
                               ? <>Next Domain: {domains[domains.findIndex(dom => dom.id === activeDomainId) + 1].name} <ChevronRight size={20} /></>
@@ -3335,7 +3337,7 @@ export default function App() {
                           <div className="space-y-3 md:space-y-4 flex-1">
                             <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-3">
                               <h3 className="text-2xl md:text-3xl font-bold tracking-tight text-stone-900">{domain.name}</h3>
-                              <div className="hidden md:block h-6 w-px bg-stone-300" />
+                              <div className="hidden md:block h-6 w-px bg-stone-300"></div>
                               <div className="flex items-center gap-2 text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-emerald-600">
                                 <span>{domain.currentRating} → {domain.futureRating}</span>
                                 <span className="bg-emerald-100 px-2 py-0.5 rounded text-emerald-800">+{(domain.futureRating || 0) - (domain.currentRating || 0)}</span>
@@ -3385,10 +3387,29 @@ export default function App() {
                                               type="date"
                                               value={sub.finishDate || ""}
                                               onChange={(e) => updateSubAreaDates(domain.id, sub.id, 'finishDate', e.target.value)}
-                                              className="bg-transparent border-none p-0 text-[10px] font-bold text-stone-600 focus:ring-0 w-28 cursor-pointer outline-none"
+                                              disabled={!!sub.isOngoing}
+                                              className={cn(
+                                                "bg-transparent border-none p-0 text-[10px] font-bold text-stone-600 focus:ring-0 w-28 cursor-pointer outline-none",
+                                                sub.isOngoing ? "opacity-60 cursor-not-allowed" : ""
+                                              )}
                                             />
                                           </div>
                                         </div>
+                                        <label className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700 uppercase tracking-widest">
+                                          <input
+                                            type="checkbox"
+                                            checked={!!sub.isOngoing}
+                                            onChange={(e) => setDomains(domains.map(dom => {
+                                              if (dom.id !== domain.id) return dom;
+                                              return {
+                                                ...dom,
+                                                subAreas: dom.subAreas.map(s => s.id === sub.id ? { ...s, isOngoing: e.target.checked, finishDate: e.target.checked ? "" : s.finishDate } : s)
+                                              };
+                                            }))}
+                                            className="w-3.5 h-3.5"
+                                          />
+                                          Ongoing
+                                        </label>
                                       </div>
                                     </div>
                                   </div>
@@ -3544,15 +3565,45 @@ export default function App() {
                                                               subAreas: dom.subAreas.map(s => {
                                                                 if (s.id !== sub.id) return s;
                                                                 const updated = [...(s.actionSteps || [])];
-                                                                updated[stepIdx] = { ...updated[stepIdx], endDate: e.target.value };
+                                                                updated[stepIdx] = { ...updated[stepIdx], endDate: e.target.value, isOngoing: false };
                                                                 return { ...s, actionSteps: updated };
                                                               })
                                                             };
                                                           }));
                                                         }}
-                                                        className="flex-1 sm:flex-none bg-white border border-stone-200 rounded-xl p-2 text-[10px] focus:ring-1 focus:ring-emerald-500 hover:border-stone-300 transition-all font-medium cursor-pointer outline-none min-w-[120px]"
+                                                        disabled={!!step.isOngoing}
+                                                        className={cn(
+                                                          "flex-1 sm:flex-none bg-white border border-stone-200 rounded-xl p-2 text-[10px] focus:ring-1 focus:ring-emerald-500 hover:border-stone-300 transition-all font-medium cursor-pointer outline-none min-w-[120px]",
+                                                          step.isOngoing ? "opacity-60 cursor-not-allowed bg-stone-100" : ""
+                                                        )}
                                                       />
                                                     </div>
+                                                    <label className="inline-flex items-center gap-2 text-[10px] font-bold text-emerald-700 uppercase tracking-widest">
+                                                      <input
+                                                        type="checkbox"
+                                                        checked={!!step.isOngoing}
+                                                        onChange={(e) => {
+                                                          setDomains(domains.map(dom => {
+                                                            if (dom.id !== domain.id) return dom;
+                                                            return {
+                                                              ...dom,
+                                                              subAreas: dom.subAreas.map(s => {
+                                                                if (s.id !== sub.id) return s;
+                                                                const updated = [...(s.actionSteps || [])];
+                                                                updated[stepIdx] = {
+                                                                  ...updated[stepIdx],
+                                                                  isOngoing: e.target.checked,
+                                                                  endDate: e.target.checked ? "" : updated[stepIdx].endDate
+                                                                };
+                                                                return { ...s, actionSteps: updated };
+                                                              })
+                                                            };
+                                                          }));
+                                                        }}
+                                                        className="w-3.5 h-3.5"
+                                                      />
+                                                      Ongoing
+                                                    </label>
                                                   </div>
 
                                                   {/* Obstacle */}
@@ -3628,7 +3679,7 @@ export default function App() {
                                                 ...dom,
                                                 subAreas: dom.subAreas.map(s => {
                                                   if (s.id !== sub.id) return s;
-                                                  const updated = [...(s.actionSteps || []), { task: "Manual Action Step", obstacle: "", overcome: "", progress: 0, startDate: "", endDate: "" }];
+                                                  const updated = [...(s.actionSteps || []), { task: "Manual Action Step", obstacle: "", overcome: "", progress: 0, startDate: "", endDate: "", isOngoing: false }];
                                                   return { ...s, actionSteps: updated };
                                                 })
                                               };
@@ -3817,7 +3868,7 @@ export default function App() {
                               <div className="flex items-center gap-4 md:gap-6 pt-2">
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border border-stone-200">
                                   <Calendar size={14} className="text-stone-400" />
-                                  <span className="text-[9px] md:text-[10px] font-bold text-stone-600 uppercase tracking-widest">{sub.startDate} – {sub.finishDate}</span>
+                                  <span className="text-[9px] md:text-[10px] font-bold text-stone-600 uppercase tracking-widest">{sub.startDate || 'TBD'} - {sub.isOngoing ? 'Ongoing' : (sub.finishDate || 'TBD')}</span>
                                 </div>
                               </div>
                             </div>
@@ -3833,11 +3884,11 @@ export default function App() {
                                                         <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-bold shrink-0">{idx + 1}</div>
                                                         <span className="text-sm font-bold text-stone-900">{step.task}</span>
                                                     </div>
-                                                    {(step.startDate || step.endDate) && (
+                                                    {(step.startDate || step.endDate || step.isOngoing) && (
                                                       <div className="flex items-center gap-2 pl-10">
                                                         <Calendar size={12} className="text-stone-400" />
                                                         <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
-                                                          {step.startDate || 'TBD'} — {step.endDate || 'TBD'}
+                                                          {step.startDate || 'TBD'} - {step.isOngoing ? 'Ongoing' : (step.endDate || 'TBD')}
                                                         </span>
                                                       </div>
                                                     )}
@@ -3974,7 +4025,7 @@ export default function App() {
                                         <Target size={12} />
                                         <span>Domains State: {domain.currentRating} → {domain.futureRating}</span>
                                       </div>
-                                      <div className="h-4 w-px bg-stone-200" />
+                                      <div className="h-4 w-px bg-stone-200"></div>
                                       <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
                                         Domains Gap: {(domain.futureRating || 0) - (domain.currentRating || 0)} pts
                                       </div>
@@ -4030,11 +4081,11 @@ export default function App() {
                                           <div className="flex justify-between items-start gap-4 text-[11px]">
                                             <span className="text-stone-700 font-medium leading-tight">{a.task}</span>
                                             <span className="text-[9px] font-bold text-stone-400 uppercase shrink-0 whitespace-nowrap mt-0.5">
-                                              {a.startDate && a.endDate ? `${a.startDate} - ${a.endDate}` : (a.dueDate || a.endDate || "")}
+                                              {a.isOngoing ? "Ongoing" : (a.startDate && a.endDate ? `${a.startDate} - ${a.endDate}` : (a.dueDate || a.endDate || ""))}
                                             </span>
                                           </div>
                                           <div className="h-1 bg-stone-100 rounded-full overflow-hidden">
-                                            <div className="h-full bg-emerald-500" style={{ width: `${a.progress || 0}%` }} />
+                                            <div className="h-full bg-emerald-500" style={{ width: `${a.progress || 0}%` }}></div>
                                           </div>
                                           
                                           {/* Action Step Comments */}
