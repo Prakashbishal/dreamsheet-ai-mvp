@@ -39,7 +39,7 @@ import {
   Printer
 } from 'lucide-react';
 import { CoachingStep, Domain, SubArea, CoachingPlan } from './types';
-import { coachingService } from './services/coachingService';
+import { coachingService, hasGeminiApiKey } from './services/coachingService';
 import { cn } from './lib/utils';
 import { WaterfallRoadmap } from './components/WaterfallRoadmap';
 
@@ -79,6 +79,17 @@ const TRADITIONAL_DOMAINS = [
 const TIME_HORIZONS = [
   "1 month", "3 months", "6 months", "12 months", "24 months", "5 years", "Legacy", "Ongoing"
 ];
+
+const FALLBACK_DOMAIN_SUGGESTIONS = [
+  { name: "Career", description: "Professional direction, meaningful work, and daily progress." },
+  { name: "Health", description: "Energy, wellbeing, fitness, and physical resilience." },
+  { name: "Relationships", description: "Connection, support, family, friendship, and belonging." },
+  { name: "Personal Growth", description: "Learning, confidence, mindset, and self-development." },
+  { name: "Finances", description: "Money clarity, stability, planning, and financial peace." }
+];
+
+const FALLBACK_FOCUS_AREAS = ["Clarity", "Consistency", "Confidence", "Progress"];
+const AI_UNAVAILABLE_MESSAGE = "AI suggestions could not be generated. You can continue with the fallback focus areas or add your own.";
 
 const DISCOVERY_QUIZ_QUESTIONS = [
   { id: "q1", question: "What parts of your life currently take most of your time, energy, or attention?", type: "text" as const },
@@ -328,6 +339,7 @@ export default function App() {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showStepList, setShowStepList] = useState(() => getInitialState('showStepList', false));
   const [showDomainInstructions, setShowDomainInstructions] = useState(false);
+  const [logoFailed, setLogoFailed] = useState(false);
   const domainInstructionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -360,6 +372,17 @@ export default function App() {
   const [isGeneratingAlternatives, setIsGeneratingAlternatives] = useState(false);
   const [suggestedDomains, setSuggestedDomains] = useState<{ name: string, description: string }[]>(() => getInitialState('suggestedDomains', []));
   const [isAnalyzingQuiz, setIsAnalyzingQuiz] = useState(false);
+  const [aiFeedback, setAiFeedback] = useState<string | null>(null);
+
+  const createFallbackSubAreas = (selected = true): SubArea[] => FALLBACK_FOCUS_AREAS.map(name => ({
+    id: Math.random().toString(36).substr(2, 9),
+    name,
+    selected
+  }));
+
+  const showAiFallback = (message = AI_UNAVAILABLE_MESSAGE) => {
+    setAiFeedback(message);
+  };
 
   const generateDiscoveryObstacles = async () => {
     const domainName = selectedRoles[0] || "this domain";
@@ -368,6 +391,10 @@ export default function App() {
     setIsGeneratingDiscoveryObstacles(true);
     try {
       const suggested = await coachingService.suggestObstacles(domainName + "\nContext:\n" + context);
+      if (!suggested.length) {
+        showAiFallback("AI suggestions could not be generated. You can list obstacles manually and continue.");
+        return;
+      }
       const obstacleStr = suggested.map(o => `• ${o}`).join('\n');
       
       const newResponses = [...discoveryResponses];
@@ -376,6 +403,7 @@ export default function App() {
       setDiscoveryResponses(newResponses);
     } catch (error) {
       console.error("Error generating discovery obstacles:", error);
+      showAiFallback("AI suggestions could not be generated. You can list obstacles manually and continue.");
     } finally {
       setIsGeneratingDiscoveryObstacles(false);
     }
@@ -384,6 +412,7 @@ export default function App() {
   const [customDiscoveryDomains, setCustomDiscoveryDomains] = useState<string[]>(() => getInitialState('customDiscoveryDomains', []));
   const [showCustomDomainInput, setShowCustomDomainInput] = useState(false);
   const [newCustomDomain, setNewCustomDomain] = useState('');
+  const [newFocusAreaName, setNewFocusAreaName] = useState('');
   const [activeExplanation, setActiveExplanation] = useState<string | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
 
@@ -721,6 +750,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, domainGoal: suggestedGoal } : d));
     } catch (error) {
       console.error("Error generating goal:", error);
+      showAiFallback("AI suggestions could not be generated. You can write your end-goal manually and continue.");
     } finally {
       setIsGeneratingGoal(false);
     }
@@ -736,6 +766,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, domainVision: suggestedState } : d));
     } catch (error) {
       console.error("Error generating vision:", error);
+      showAiFallback("AI suggestions could not be generated. You can write your vision manually and continue.");
     } finally {
       setIsGeneratingVision(false);
     }
@@ -751,6 +782,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, why: suggestedWhy } : d));
     } catch (error) {
       console.error("Error generating domain why:", error);
+      showAiFallback("AI suggestions could not be generated. You can write your why manually and continue.");
     } finally {
       setIsGeneratingWhy(false);
     }
@@ -788,6 +820,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error generating goal affirmations:", error);
+      showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
     } finally {
       setIsGeneratingGoalAffirmations(false);
     }
@@ -823,6 +856,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, suggestedAffirmations: affirmations } : d));
     } catch (error) {
       console.error("Error generating affirmations:", error);
+      showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
     } finally {
       setIsGeneratingAffirmations(false);
     }
@@ -858,6 +892,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, subAreas: updatedSubAreas } : d));
     } catch (error) {
       console.error("Error generating end goals:", error);
+      showAiFallback("AI suggestions could not be generated. You can write end-goals manually and continue.");
     } finally {
       setIsGeneratingSupportingGoals(false);
     }
@@ -924,6 +959,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating action steps:", error);
+      showAiFallback("AI suggestions could not be generated. You can add action steps manually and continue.");
     } finally {
       setIsGeneratingActionSteps(false);
     }
@@ -957,6 +993,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating obstacles:", error);
+      showAiFallback("AI suggestions could not be generated. You can add obstacles manually and continue.");
     } finally {
       setIsGeneratingObstacles(false);
     }
@@ -985,6 +1022,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating solution:", error);
+      showAiFallback("AI suggestions could not be generated. You can write a solution manually and continue.");
     } finally {
       setIsGeneratingObstacleSolution(false);
     }
@@ -994,6 +1032,7 @@ export default function App() {
     if (selectedRoles.length === 0) return;
     
     setIsGeneratingDomainVision(true);
+    setAiFeedback(null);
     try {
       // Initialize domains with shells
       const initialDomains = selectedRoles.map(name => {
@@ -1011,11 +1050,15 @@ export default function App() {
         try {
           // Only generate if it doesn't have a vision yet or we want to refresh
           const context = await coachingService.suggestDomainContext(domain.name, discoveryResponses);
+          const focusAreas = context.subAreas?.filter(Boolean).slice(0, 4);
+          if (!focusAreas.length) {
+            showAiFallback();
+          }
           return {
             ...domain,
             domainVision: context.vision,
             why: context.why,
-            subAreas: context.subAreas.slice(0, 4).map(s => ({
+            subAreas: (focusAreas.length ? focusAreas : FALLBACK_FOCUS_AREAS).map(s => ({
               id: Math.random().toString(36).substr(2, 9),
               name: s,
               selected: true
@@ -1023,7 +1066,13 @@ export default function App() {
           };
         } catch (err) {
           console.error(`Error generating context for ${domain.name}:`, err);
-          return domain; // Return shell if failed
+          showAiFallback();
+          return {
+            ...domain,
+            domainVision: domain.domainVision || "",
+            why: domain.why || "",
+            subAreas: domain.subAreas.length > 0 ? domain.subAreas : createFallbackSubAreas(true)
+          };
         }
       }));
 
@@ -1045,6 +1094,7 @@ export default function App() {
       setShowDomainVisionResults(true);
     } catch (error) {
       console.error("Error completing discovery:", error);
+      showAiFallback();
     } finally {
       setIsGeneratingDomainVision(false);
     }
@@ -1055,11 +1105,17 @@ export default function App() {
     if (!domain) return;
 
     setIsGeneratingAlternatives(true);
+    setAiFeedback(null);
     try {
       const existingNames = domain.subAreas.map(s => s.name);
       const suggestions = await coachingService.suggestSubAreas(domain.name, discoveryResponses, existingNames);
+      const cleanSuggestions = suggestions.filter(s => s.trim() && !existingNames.some(existing => existing.toLowerCase() === s.trim().toLowerCase()));
+      const finalSuggestions = cleanSuggestions.length > 0 ? cleanSuggestions : FALLBACK_FOCUS_AREAS.filter(s => !existingNames.some(existing => existing.toLowerCase() === s.toLowerCase()));
+      if (cleanSuggestions.length === 0) {
+        showAiFallback();
+      }
       
-      const newSubAreas = suggestions.map(s => ({
+      const newSubAreas = finalSuggestions.map(s => ({
         id: Math.random().toString(36).substr(2, 9),
         name: s,
         selected: false // Default to unselected so user can choose
@@ -1074,6 +1130,16 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating alternative sub-areas:", error);
+      showAiFallback();
+      const existingNames = domain.subAreas.map(s => s.name.toLowerCase());
+      const fallbackSubAreas = FALLBACK_FOCUS_AREAS
+        .filter(name => !existingNames.includes(name.toLowerCase()))
+        .map(name => ({
+          id: Math.random().toString(36).substr(2, 9),
+          name,
+          selected: false
+        }));
+      setDomains(prev => prev.map(d => d.id === domainId ? { ...d, subAreas: [...d.subAreas, ...fallbackSubAreas].slice(0, 12) } : d));
     } finally {
       setIsGeneratingAlternatives(false);
     }
@@ -1106,6 +1172,31 @@ export default function App() {
     }));
   };
 
+  const addManualFocusArea = (domainId: string) => {
+    const trimmed = newFocusAreaName.trim();
+    if (!trimmed) return;
+
+    setDomains(prev => prev.map(d => {
+      if (d.id !== domainId) return d;
+      const selectedCount = d.subAreas.filter(s => s.selected !== false).length;
+      const alreadyExists = d.subAreas.some(s => s.name.trim().toLowerCase() === trimmed.toLowerCase());
+      if (alreadyExists) return d;
+
+      return {
+        ...d,
+        subAreas: [
+          ...d.subAreas,
+          {
+            id: Math.random().toString(36).substr(2, 9),
+            name: trimmed,
+            selected: selectedCount < 4
+          }
+        ]
+      };
+    }));
+    setNewFocusAreaName('');
+  };
+
   const finalizeSubAreas = () => {
     // Filter out unselected sub-areas for ALL domains
     setDomains(prev => prev.map(d => ({
@@ -1124,23 +1215,37 @@ export default function App() {
     }
 
     setIsArchitecting(true);
-    const updatedDomains = await Promise.all(domains.map(async (domain) => {
-      if (!forceRegenerate && domain.subAreas.length > 0) return domain;
-      const suggestions = (domain.suggestions && !forceRegenerate) 
-        ? domain.suggestions 
-        : await coachingService.suggestSubAreas(domain.name, discoveryResponses);
-      
-      return {
+    try {
+      const updatedDomains = await Promise.all(domains.map(async (domain) => {
+        if (!forceRegenerate && domain.subAreas.length > 0) return domain;
+        const suggestions = (domain.suggestions && !forceRegenerate) 
+          ? domain.suggestions 
+          : await coachingService.suggestSubAreas(domain.name, discoveryResponses);
+        const cleanSuggestions = suggestions.filter(Boolean);
+        
+        return {
+          ...domain,
+          subAreas: (cleanSuggestions.length > 0 ? cleanSuggestions : FALLBACK_FOCUS_AREAS).map(s => ({
+            id: Math.random().toString(36).substr(2, 9),
+            name: s,
+            selected: true
+          }))
+        };
+      }));
+      setDomains(updatedDomains);
+      if (updatedDomains.length > 0) setActiveDomainId(updatedDomains[0].id);
+    } catch (error) {
+      console.error("Error generating sub-areas:", error);
+      showAiFallback();
+      const updatedDomains = domains.map(domain => ({
         ...domain,
-        subAreas: suggestions.map(s => ({
-          id: Math.random().toString(36).substr(2, 9),
-          name: s
-        }))
-      };
-    }));
-    setDomains(updatedDomains);
-    setIsArchitecting(false);
-    if (updatedDomains.length > 0) setActiveDomainId(updatedDomains[0].id);
+        subAreas: domain.subAreas.length > 0 ? domain.subAreas : createFallbackSubAreas(true)
+      }));
+      setDomains(updatedDomains);
+      if (updatedDomains.length > 0) setActiveDomainId(updatedDomains[0].id);
+    } finally {
+      setIsArchitecting(false);
+    }
   };
 
   const regenerateSubAreaGoals = async (domainId: string, subAreaId: string) => {
@@ -1168,6 +1273,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to regenerate goals", e);
+      showAiFallback("AI suggestions could not be generated. You can edit these details manually and continue.");
     } finally {
       setLoading(false);
     }
@@ -1197,6 +1303,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to refine action steps", e);
+      showAiFallback("AI suggestions could not be generated. You can refine action steps manually and continue.");
     } finally {
       setLoading(false);
     }
@@ -1232,6 +1339,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to fetch domain strategy", e);
+      showAiFallback("AI suggestions could not be generated. You can continue with fallback focus areas or add your own.");
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, isGenerating: false } : d));
     }
   };
@@ -1644,6 +1752,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to regenerate DREAM details", e);
+      showAiFallback("AI suggestions could not be generated. You can edit these details manually and continue.");
     } finally {
       setLoading(false);
     }
@@ -1775,6 +1884,7 @@ export default function App() {
       }
     } catch (e) {
       console.error("Failed to generate DREAM details", e);
+      showAiFallback("AI suggestions could not be generated. You can edit your DREAM details manually and continue.");
     } finally {
       setIsArchitecting(false);
     }
@@ -1793,7 +1903,16 @@ export default function App() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
-                <img src="/flourish-logo.svg" alt="Flourish logo" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} className="w-10 h-10 object-contain rounded-md bg-white/5 p-1" />
+                <div className="flex items-center gap-2 shrink-0">
+                  {logoFailed ? (
+                    <div className="w-10 h-10 rounded-md bg-emerald-600 text-white flex items-center justify-center font-black text-lg" aria-label="Flourish">
+                      F
+                    </div>
+                  ) : (
+                    <img src="/flourish-logo.svg" alt="Flourish logo" onError={() => setLogoFailed(true)} className="w-10 h-10 object-contain rounded-md bg-white/5 p-1" />
+                  )}
+                  <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">Flourish</span>
+                </div>
                 <div className="space-y-0.5 text-left">
                   <h1 className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight flex items-baseline select-none">
                     <span className="relative inline-block mr-1">
@@ -1980,6 +2099,22 @@ export default function App() {
                   <span className="text-xs text-stone-600 italic">No focus areas were generated. Please try again or add one manually.</span>
                 )}
               </div>
+            </div>
+          )}
+
+          {aiFeedback && (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-start justify-between gap-3 no-print">
+              <div className="flex items-start gap-2">
+                <ShieldAlert size={16} className="mt-0.5 shrink-0" />
+                <span>{aiFeedback}</span>
+              </div>
+              <button
+                onClick={() => setAiFeedback(null)}
+                className="text-amber-700 hover:text-amber-950 shrink-0"
+                aria-label="Dismiss AI message"
+              >
+                <X size={16} />
+              </button>
             </div>
           )}
 
@@ -2635,6 +2770,11 @@ export default function App() {
                             <p className="text-stone-500 text-sm italic">
                               Select up to 4. To change a selection, deselect one first. (Currently {domains.find(d => d.id === activeDomainId)?.subAreas.filter(s => s.selected !== false).length || 0}/4 selected)
                             </p>
+                            {(domains.find(d => d.id === activeDomainId)?.subAreas.length || 0) === 0 && (
+                              <p className="text-amber-700 text-sm bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+                                AI suggestions could not be generated. You can continue with the fallback focus areas or add your own.
+                              </p>
+                            )}
                             <div className="flex justify-center w-full mt-2">
                               <button 
                                 onClick={() => generateAlternativeSubAreas(activeDomainId!)}
@@ -2649,6 +2789,26 @@ export default function App() {
                                 {isGeneratingAlternatives ? "Generating Alternatives..." : "Suggest Alternative Focus Areas"}
                               </button>
                             </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row gap-3 bg-white border border-stone-200 rounded-2xl p-3 shadow-sm">
+                            <input
+                              value={newFocusAreaName}
+                              onChange={(e) => setNewFocusAreaName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && activeDomainId) addManualFocusArea(activeDomainId);
+                              }}
+                              placeholder="Add your own focus area..."
+                              className="flex-1 px-4 py-3 rounded-xl border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                            />
+                            <button
+                              onClick={() => activeDomainId && addManualFocusArea(activeDomainId)}
+                              disabled={!newFocusAreaName.trim()}
+                              className="px-5 py-3 rounded-xl bg-stone-900 text-white text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-50 transition-all"
+                            >
+                              <Plus size={14} />
+                              Add Focus Area
+                            </button>
                           </div>
                           
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -4470,16 +4630,26 @@ const QuizOverlay = ({
   const [selectedDomainNames, setSelectedDomainNames] = useState<string[]>([]);
   const [currentRatingIndex, setCurrentRatingIndex] = useState(0);
   const [domainRatings, setDomainRatings] = useState<Record<string, { current: number, urgency: number, importance: number }>>({});
+  const [quizNotice, setQuizNotice] = useState<string | null>(null);
+  const [manualDomainName, setManualDomainName] = useState('');
 
   const analyzeResponses = async () => {
     setIsAnalyzingQuiz(true);
     setQuizPhase('analysis');
+    setQuizNotice(null);
     try {
       const suggestions = await coachingService.analyzeQuizResponses(quizResponses);
-      setSuggestedDomains(suggestions);
-      setSelectedDomainNames(suggestions.map(s => s.name));
+      const finalSuggestions = suggestions.length > 0 ? suggestions : FALLBACK_DOMAIN_SUGGESTIONS;
+      if (suggestions.length === 0) {
+        setQuizNotice("AI domain suggestions could not be generated. You can continue with fallback domains or add your own.");
+      }
+      setSuggestedDomains(finalSuggestions);
+      setSelectedDomainNames(finalSuggestions.map(s => s.name));
     } catch (error) {
       console.error("Quiz analysis failed:", error);
+      setQuizNotice("AI domain suggestions could not be generated. You can continue with fallback domains or add your own.");
+      setSuggestedDomains(FALLBACK_DOMAIN_SUGGESTIONS);
+      setSelectedDomainNames(FALLBACK_DOMAIN_SUGGESTIONS.map(s => s.name));
     } finally {
       setIsAnalyzingQuiz(false);
     }
@@ -4523,8 +4693,22 @@ const QuizOverlay = ({
     }
   };
 
+  const addManualDomainSuggestion = () => {
+    const trimmed = manualDomainName.trim();
+    if (!trimmed) return;
+    if (suggestedDomains.some(domain => domain.name.toLowerCase() === trimmed.toLowerCase())) {
+      setManualDomainName('');
+      return;
+    }
+    const nextDomain = { name: trimmed, description: "A domain you added manually for this plan." };
+    setSuggestedDomains([...suggestedDomains, nextDomain]);
+    setSelectedDomainNames([...selectedDomainNames, trimmed]);
+    setManualDomainName('');
+  };
+
   const handleStartRating = () => {
-    const selected = suggestedDomains.filter(d => selectedDomainNames.includes(d.name));
+    const availableDomains = suggestedDomains.length > 0 ? suggestedDomains : FALLBACK_DOMAIN_SUGGESTIONS;
+    const selected = availableDomains.filter(d => selectedDomainNames.includes(d.name));
     if (selected.length === 0) return;
     
     const initialRatings: Record<string, { current: number, urgency: number, importance: number }> = {};
@@ -4535,7 +4719,8 @@ const QuizOverlay = ({
   };
 
   const handleRatingNext = () => {
-    const selected = suggestedDomains.filter(d => selectedDomainNames.includes(d.name));
+    const availableDomains = suggestedDomains.length > 0 ? suggestedDomains : FALLBACK_DOMAIN_SUGGESTIONS;
+    const selected = availableDomains.filter(d => selectedDomainNames.includes(d.name));
     if (currentRatingIndex < selected.length - 1) {
       setCurrentRatingIndex(currentRatingIndex + 1);
     } else {
@@ -4554,7 +4739,8 @@ const QuizOverlay = ({
   };
 
   const applySelectedDomains = () => {
-    const selected = suggestedDomains.filter(d => selectedDomainNames.includes(d.name));
+    const availableDomains = suggestedDomains.length > 0 ? suggestedDomains : FALLBACK_DOMAIN_SUGGESTIONS;
+    const selected = availableDomains.filter(d => selectedDomainNames.includes(d.name));
     
     // Rank based on (Importance + Urgency) - Current satisfaction
     const rankedSelected = [...selected].sort((a, b) => {
@@ -4615,10 +4801,10 @@ const QuizOverlay = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[3000] bg-stone-900/40 backdrop-blur-md flex items-center justify-center p-4 md:p-8"
+      className="fixed inset-0 z-[3000] bg-stone-900/40 backdrop-blur-md min-h-screen overflow-y-auto p-3 md:p-6"
     >
-      <div className="bg-white w-full max-w-5xl h-full max-h-[850px] rounded-[40px] shadow-2xl flex flex-col overflow-hidden border border-white/20">
-        <div className="p-4 md:p-8 border-b border-stone-100 flex items-center justify-between">
+      <div className="bg-white w-full max-w-5xl min-h-[calc(100vh-1.5rem)] md:min-h-[calc(100vh-3rem)] mx-auto rounded-[28px] md:rounded-[40px] shadow-2xl flex flex-col overflow-hidden border border-white/20">
+        <div className="p-4 md:p-6 border-b border-stone-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-100 p-2 rounded-xl text-emerald-600 shrink-0">
               <Compass size={24} />
@@ -4644,7 +4830,7 @@ const QuizOverlay = ({
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar">
           <AnimatePresence mode="wait" initial={false}>
             {quizPhase === 'intro' ? (
               <motion.div 
@@ -4652,7 +4838,7 @@ const QuizOverlay = ({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="h-full flex flex-col items-center justify-center p-6 md:p-12 max-w-2xl mx-auto text-center space-y-8 md:space-y-12 overflow-y-auto"
+                className="min-h-full flex flex-col items-center justify-center p-5 md:p-8 max-w-2xl mx-auto text-center space-y-6 md:space-y-8 overflow-y-auto"
               >
                 <div className="space-y-6">
                   <h3 className="text-2xl md:text-4xl font-serif italic text-stone-900 leading-tight">Instructions to Coachee</h3>
@@ -4676,24 +4862,24 @@ const QuizOverlay = ({
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="h-full overflow-y-auto p-6 md:p-12 flex flex-col justify-center max-w-3xl mx-auto w-full font-serif"
+                className="min-h-full overflow-y-auto p-5 md:p-8 flex flex-col justify-center max-w-3xl mx-auto w-full font-serif"
               >
-                <div className="space-y-12">
-                  <div className="space-y-4 text-center">
+                <div className="space-y-6 md:space-y-8">
+                  <div className="space-y-3 text-center">
                     <span className="text-[10px] font-bold text-emerald-600 font-sans uppercase tracking-[0.2em]">Question {currentQuizIndex + 1} of 10</span>
-                    <h3 className="text-4xl italic text-stone-900 leading-tight">{currentQuestion.question}</h3>
+                    <h3 className="text-2xl md:text-3xl italic text-stone-900 leading-tight">{currentQuestion.question}</h3>
                   </div>
 
-                  <div className="pt-8">
+                  <div>
                     <textarea
                       value={currentQuestion?.answer || ''}
                       onChange={(e) => updateQuizResponse(e.target.value)}
                       placeholder="Share your thoughts honestly..."
-                      className="w-full h-48 bg-stone-50 border-2 border-stone-100 rounded-3xl p-6 text-xl text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all font-serif italic outline-none"
+                      className="w-full min-h-36 md:min-h-44 bg-stone-50 border-2 border-stone-100 rounded-3xl p-5 text-base md:text-lg text-stone-900 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all font-serif italic outline-none"
                     />
                   </div>
 
-                  <div className="flex items-center justify-center gap-4 pt-12">
+                  <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                     <button
                       onClick={prevQuizStep}
                       className="flex items-center gap-2 px-8 py-4 rounded-2xl text-xs font-bold font-sans tracking-wide text-stone-500 hover:bg-stone-50 transition-all"
@@ -4704,7 +4890,7 @@ const QuizOverlay = ({
                     <button
                       onClick={nextQuizStep}
                       disabled={!currentQuestion?.answer?.trim()}
-                      className="flex items-center gap-2 px-12 py-5 bg-emerald-600 text-white rounded-2xl text-xs font-bold font-sans tracking-wide hover:bg-emerald-700 shadow-xl shadow-emerald-600/20 active:scale-95 transition-all disabled:opacity-50"
+                      className="flex items-center gap-2 px-8 md:px-12 py-4 md:py-5 bg-emerald-600 text-white rounded-2xl text-xs font-bold font-sans tracking-wide hover:bg-emerald-700 shadow-xl shadow-emerald-600/20 active:scale-95 transition-all disabled:opacity-50"
                     >
                       {currentQuizIndex === quizResponses.length - 1 ? "Complete discovery" : "Next Question"}
                       <ChevronRight size={18} />
@@ -4718,7 +4904,7 @@ const QuizOverlay = ({
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="h-full flex flex-col p-4 md:p-8 overflow-y-auto custom-scrollbar"
+                className="min-h-full flex flex-col p-4 md:p-6 overflow-y-auto custom-scrollbar"
               >
                 {isAnalyzingQuiz ? (
                   <div className="flex-1 flex flex-col items-center justify-center">
@@ -4730,10 +4916,15 @@ const QuizOverlay = ({
                       <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Step 2 — Identify Domains</span>
                       <h3 className="text-2xl md:text-4xl font-serif italic text-stone-900 leading-tight">Your Recurring Themes</h3>
                       <p className="text-stone-500 text-xs md:text-sm italic px-4 md:px-0">Review your answers and select 4–5 core domains that truly matter to you right now.</p>
+                      {quizNotice && (
+                        <p className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 w-full">
+                          {quizNotice}
+                        </p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 px-4">
-                      {suggestedDomains.map((domain, idx) => {
+                      {(suggestedDomains.length > 0 ? suggestedDomains : FALLBACK_DOMAIN_SUGGESTIONS).map((domain, idx) => {
                         const isSelected = selectedDomainNames.includes(domain.name);
                         return (
                           <button
@@ -4761,9 +4952,32 @@ const QuizOverlay = ({
                       })}
                     </div>
 
+                    <div className="px-4">
+                      <div className="flex flex-col sm:flex-row gap-3 bg-stone-50 border border-stone-100 rounded-2xl p-3">
+                        <input
+                          value={manualDomainName}
+                          onChange={(e) => setManualDomainName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') addManualDomainSuggestion();
+                          }}
+                          placeholder="Add a domain manually..."
+                          className="flex-1 px-4 py-3 rounded-xl border border-stone-200 text-sm font-sans focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                        />
+                        <button
+                          onClick={addManualDomainSuggestion}
+                          disabled={!manualDomainName.trim()}
+                          className="px-5 py-3 rounded-xl bg-stone-900 text-white text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-emerald-700 transition-all"
+                        >
+                          <Plus size={14} />
+                          Add Domain
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="flex flex-col items-center gap-6 pt-8 md:pt-12 border-t border-stone-100">
                       <button
                         onClick={handleStartRating}
+                        disabled={selectedDomainNames.length === 0}
                         className="flex items-center gap-3 px-10 md:px-16 py-4 md:py-6 bg-stone-900 text-white rounded-[24px] text-xs md:text-sm font-bold tracking-wide hover:bg-stone-800 shadow-2xl transition-all active:scale-95 group"
                       >
                         Confirm Domains and Rate
@@ -4779,10 +4993,10 @@ const QuizOverlay = ({
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="h-full overflow-y-auto p-6 md:p-12 flex flex-col justify-center max-w-3xl mx-auto w-full font-serif custom-scrollbar"
+                className="min-h-full overflow-y-auto p-5 md:p-8 flex flex-col justify-center max-w-3xl mx-auto w-full font-serif custom-scrollbar"
               >
                 {(() => {
-                  const selected = suggestedDomains.filter(d => selectedDomainNames.includes(d.name));
+                  const selected = (suggestedDomains.length > 0 ? suggestedDomains : FALLBACK_DOMAIN_SUGGESTIONS).filter(d => selectedDomainNames.includes(d.name));
                   const currentDomain = selected[currentRatingIndex];
                   if (!currentDomain) return null;
 
@@ -4894,7 +5108,7 @@ const QuizOverlay = ({
           </AnimatePresence>
         </div>
 
-        <div className="px-8 py-6 bg-stone-50 border-t border-stone-100 flex justify-between items-center">
+        <div className="px-4 md:px-8 py-4 bg-stone-50 border-t border-stone-100 flex justify-between items-center shrink-0">
           <div className="flex gap-2">
             {quizPhase === 'input' && quizResponses.map((_, i) => (
               <div 

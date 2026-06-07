@@ -1,11 +1,45 @@
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const geminiApiKey = process.env.GEMINI_API_KEY || '';
+export const hasGeminiApiKey = Boolean(geminiApiKey);
+
+console.info("GEMINI_API_KEY exists:", hasGeminiApiKey);
+if (!hasGeminiApiKey) {
+  console.warn("GEMINI_API_KEY is missing. AI suggestions will be unavailable.");
+}
+
+const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 const model = "gemini-3-flash-preview";
 const AI_FALLBACK_MESSAGE = "AI suggestion could not be generated. Please try again or edit manually.";
 
+const requireGeminiApiKey = () => {
+  if (!hasGeminiApiKey) {
+    throw new Error("GEMINI_API_KEY is missing. AI suggestions will be unavailable.");
+  }
+};
+
+const parseJson = <T>(text: string | undefined, fallback: T): T => {
+  if (!text?.trim()) return fallback;
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    console.error("Failed to parse Gemini JSON response", e);
+    return fallback;
+  }
+};
+
+const sanitizeStringList = (items: unknown, fallback: string[]): string[] => {
+  if (!Array.isArray(items)) return fallback;
+  const clean = items
+    .filter((item): item is string => typeof item === "string")
+    .map(item => item.trim())
+    .filter(Boolean);
+  return clean.length > 0 ? clean : fallback;
+};
+
 export const coachingService = {
   async analyzeQuizResponses(responses: { question: string, answer: string }[]): Promise<{ name: string, description: string }[]> {
+    requireGeminiApiKey();
     const prompt = `Review the following 10 discovery responses from a coachee and identify recurring themes. Based on these themes, suggest 4–5 specific "Life Domains" that seem most important in their current life.
     
     Responses:
@@ -37,19 +71,19 @@ export const coachingService = {
       }
     });
 
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      console.error("Failed to parse quiz analysis", e);
-      return [
-        { name: "Personal Growth", description: "Focusing on overall advancement and learning." },
-        { name: "Health & Vitality", description: "Prioritizing physical well-being and energy." },
-        { name: "Mindset & Resilience", description: "Building mental strength and emotional balance." }
-      ];
-    }
+    const fallback = [
+      { name: "Career", description: "Professional direction, meaningful work, and daily progress." },
+      { name: "Health", description: "Energy, wellbeing, fitness, and physical resilience." },
+      { name: "Relationships", description: "Connection, support, family, friendship, and belonging." },
+      { name: "Personal Growth", description: "Learning, confidence, mindset, and self-development." },
+      { name: "Finances", description: "Money clarity, stability, planning, and financial peace." }
+    ];
+    const parsed = parseJson(response.text, fallback);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed.filter(item => item?.name?.trim()).slice(0, 5) : fallback;
   },
 
   async suggestSubAreas(domainName: string, discoveryResponses: { question: string, answer: string }[], exclude: string[] = []): Promise<string[]> {
+    requireGeminiApiKey();
     const prompt = `Suggest 4-6 specific sub-areas for the life domain: "${domainName}".
     
     Consider the coachee's discovery responses to make these sub-areas highly relevant:
@@ -71,14 +105,11 @@ export const coachingService = {
         }
       }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      return [AI_FALLBACK_MESSAGE];
-    }
+    return sanitizeStringList(parseJson(response.text, []), ["Clarity", "Consistency", "Confidence", "Progress"]);
   },
 
   async suggestDomainsFromDiscovery(responses: { question: string, answer: string }[], roles: string[], timeHorizon: string): Promise<string[]> {
+    requireGeminiApiKey();
     const parentDomain = responses[3]?.answer || "Life";
     const prompt = `I'm trying to decide what's most important to my personal happiness and the happiness of those around me, so that I can embark on a journey of goal-setting and goal achievement (I refer to the combination of these two things as 'goal-getting'). Another way of looking at this is to consider what things and people are most valuable to me at this time. 
 
@@ -112,15 +143,11 @@ Return the result as a JSON array of strings, where each string is in the format
         }
       }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      console.error("Failed to parse AI response", e);
-      return [`${parentDomain} > General`, `${parentDomain} > Growth`];
-    }
+    return sanitizeStringList(parseJson(response.text, []), [`${parentDomain} > General`, `${parentDomain} > Growth`]);
   },
 
   async suggestVisionAndWhy(domainName: string, discoveryResponses: { question: string, answer: string }[]): Promise<{ vision: string, why: string }> {
+    requireGeminiApiKey();
     const prompt = `The coachee has selected the domain: "${domainName}".
     Based on their discovery responses:
     ${discoveryResponses.map(r => `Q: ${r.question}\nA: ${r.answer}`).join('\n\n')}
@@ -146,10 +173,11 @@ Return the result as a JSON array of strings, where each string is in the format
         }
       }
     });
-    return JSON.parse(response.text);
+    return parseJson(response.text, { vision: "", why: "" });
   },
 
   async suggestDomainWhy(domainName: string, discoveryResponses: { question: string, answer: string }[]): Promise<string> {
+    requireGeminiApiKey();
     const responsesSummary = discoveryResponses
       .filter(r => r.answer.trim() !== "")
       .map(r => `Q: ${r.question}\nA: ${r.answer}`)
@@ -183,7 +211,7 @@ Return the result as a JSON array of strings, where each string is in the format
     });
     
     try {
-      const data = JSON.parse(response.text);
+      const data = parseJson(response.text, { why: AI_FALLBACK_MESSAGE });
       return data.why;
     } catch (e) {
       console.error("Failed to parse suggested domain why", e);
@@ -192,6 +220,7 @@ Return the result as a JSON array of strings, where each string is in the format
   },
 
   async suggestDomainContext(domainName: string, discoveryResponses: { question: string, answer: string }[]): Promise<{ vision: string, why: string, subAreas: string[] }> {
+    requireGeminiApiKey();
     const responsesSummary = discoveryResponses
       .filter(r => r.answer.trim() !== "")
       .map(r => `Q: ${r.question}\nA: ${r.answer}`)
@@ -230,10 +259,21 @@ Return the result as a JSON array of strings, where each string is in the format
         }
       }
     });
-    return JSON.parse(response.text);
+    const fallback = {
+      vision: "",
+      why: "",
+      subAreas: ["Clarity", "Consistency", "Confidence", "Progress"]
+    };
+    const parsed = parseJson(response.text, fallback);
+    return {
+      vision: typeof parsed.vision === "string" ? parsed.vision : "",
+      why: typeof parsed.why === "string" ? parsed.why : "",
+      subAreas: sanitizeStringList(parsed.subAreas, fallback.subAreas).slice(0, 4)
+    };
   },
 
   async refineActionSteps(subAreaName: string, currentSteps: any[]) {
+    requireGeminiApiKey();
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const prompt = `Refine the following action steps for the sub-area "${subAreaName}" to make them SMART (Specific, Measurable, Achievable, Relevant, and Time-bound).
 Today's date is ${today}.
@@ -290,6 +330,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestDomainEndGoal(domainName: string, discoveryResponses: { question: string, answer: string }[]): Promise<string> {
+    requireGeminiApiKey();
     const responsesSummary = discoveryResponses
       .filter(r => r.answer.trim() !== "")
       .map(r => `Q: ${r.question}\nA: ${r.answer}`)
@@ -316,6 +357,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestDomainVision(domainName: string, domainGoal: string, timeHorizon: string): Promise<string> {
+    requireGeminiApiKey();
     const prompt = `For the domains "${domainName}" and the End-goals "${domainGoal}" with a time horizon of ${timeHorizon}.
     
     Please write a detailed, SMART (Specific, Measurable, Achievable, Relevant, Time-bound) description of the "Vision" (around 50-75 words).
@@ -334,6 +376,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestGoalAffirmations(goals: string[]): Promise<string[]> {
+    requireGeminiApiKey();
     const prompt = `For each of the following specific goals, suggest one powerful, present-tense affirmation (strictly constrained to be between 12 and 15 words in length, the shorter the better. Count each word in the affirmation to guarantee it is exactly in the 12-15 word range).
     
     Goals:
@@ -360,6 +403,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestDomainAffirmations(domainName: string, domainGoal: string, domainVision: string): Promise<string[]> {
+    requireGeminiApiKey();
     const prompt = `For the domains "${domainName}", with the End-goals "${domainGoal}" and the Vision description: "${domainVision}".
     
     Suggest 3 powerful, present-tense affirmations (strictly between 12 and 15 words each, the shorter the better. Do not write more than 15 words and do not write less than 12 words per affirmation) that empower the coachee to achieve this vision.
@@ -385,6 +429,7 @@ Return the result as a JSON object.`;
   },
   
   async suggestSubAreaEndGoal(subAreaName: string, domainVision: string, timeHorizon: string): Promise<{ goal: string, recommendedDurationDays: number }> {
+    requireGeminiApiKey();
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const prompt = `For the sub-domain focus area "${subAreaName}" within the broader vision of: "${domainVision}".
     The time horizon for the entire plan is ${timeHorizon}. Today's date is ${today}.
@@ -413,6 +458,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestActionStepsForGoal(goal: string, domainName: string): Promise<{ task: string, obstacle: string, overcome: string, startDate: string, endDate: string }[]> {
+    requireGeminiApiKey();
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const prompt = `For the following End-goal in the domain "${domainName}":
     Goal: "${goal}"
@@ -453,6 +499,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestObstacles(goalName: string): Promise<string[]> {
+    requireGeminiApiKey();
     const prompt = `For the following goal, suggest 2 potential obstacles that could prevent someone from achieving it.
     Goal: "${goalName}"
     
@@ -477,6 +524,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestObstacleSolution(goalName: string, obstacle: string): Promise<string> {
+    requireGeminiApiKey();
     const prompt = `For the goal "${goalName}", how would you overcome this obstacle: "${obstacle}"?
     
     Provide one creative and effective solution (10-15 words).
@@ -491,6 +539,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestSupportingEndGoals(domainName: string, domainGoal: string, domainVision: string): Promise<{name: string, obstacles: {obstacle: string, solution: string}[]}[]> {
+    requireGeminiApiKey();
     const prompt = `For the domains "${domainName}", the End-goals is "${domainGoal}" and the successful Vision is "${domainVision}".
     
     Suggest 3 SMART (Specific, Measurable, Achievable, Relevant, Time-bound) "Supporting End-goals" (15-20 words each).
@@ -536,6 +585,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestDREAMDetails(subArea: string, current: number, future: number) {
+    requireGeminiApiKey();
     const prompt = `This is step E, A, and M in the DREAMsheet AI methodology: E (End-goals), A (Affirmation), and M (Masterplan).
 
 PART E: END-GOALS
@@ -730,6 +780,7 @@ Return the result as a JSON object.`;
   },
 
   async suggestDomainStrategy(domainName: string, domainGoal: string) {
+    requireGeminiApiKey();
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const prompt = `The coachee has defined an overall goal for the domain "${domainName}":
     Domain Goal: "${domainGoal}"
