@@ -1909,7 +1909,7 @@ export default function App() {
                       F
                     </div>
                   ) : (
-                    <img src="/flourish-logo.svg" alt="Flourish logo" onError={() => setLogoFailed(true)} className="w-10 h-10 object-contain rounded-md bg-white/5 p-1" />
+                    <img src="/flourish-logo.png" alt="Flourish logo" onError={() => setLogoFailed(true)} className="w-10 h-10 object-contain rounded-md bg-white/5 p-1" />
                   )}
                   <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">Flourish</span>
                 </div>
