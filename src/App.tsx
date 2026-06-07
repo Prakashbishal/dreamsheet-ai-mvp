@@ -1901,28 +1901,21 @@ export default function App() {
       <header className="bg-black text-white shrink-0 sticky top-0 z-[2000] border-b border-white/5">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2 shrink-0">
-                  {logoFailed ? (
-                    <div className="w-10 h-10 rounded-md bg-emerald-600 text-white flex items-center justify-center font-black text-lg" aria-label="Flourish">
-                      F
-                    </div>
-                  ) : (
-                    <img src="/flourish-logo.png" alt="Flourish logo" onError={() => setLogoFailed(true)} className="w-10 h-10 object-contain rounded-md bg-white/5 p-1" />
-                  )}
-                  <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">Flourish</span>
-                </div>
-                <div className="space-y-0.5 text-left">
-                  <h1 className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight flex items-baseline select-none">
-                    <span className="relative inline-block mr-1">
-                      DREAM
-                      <span className="absolute -bottom-0.5 left-0 w-full h-[2.5px] bg-[#E11D48] rounded-full" />
-                    </span>
-                    <span className="font-light opacity-80 text-stone-200">sheet AI</span>
-                  </h1>
-                  <p className="hidden md:block text-[#888888] italic text-[11px] font-light">"The best way to predict the future is to make it up"</p>
-                </div>
+            <div className="flex items-center gap-4 min-w-0">
+              <div className="flex items-center gap-3 min-w-0">
+                {logoFailed ? (
+                  <div className="flex flex-col text-left min-w-0">
+                    <span className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white leading-tight truncate">DreamSheet AI</span>
+                    <span className="hidden md:block text-[#888888] italic text-[11px] font-light truncate">"The best way to predict the future is to make it up"</span>
+                  </div>
+                ) : (
+                  <img
+                    src="/flourish-logo.png"
+                    alt="DreamSheet AI"
+                    onError={() => setLogoFailed(true)}
+                    className="h-12 sm:h-14 md:h-16 w-auto max-w-[210px] sm:max-w-[280px] md:max-w-[360px] object-contain shrink-0"
+                  />
+                )}
               </div>
 
               {/* Official Badge for Tablet/Desktop */}
