@@ -52,6 +52,7 @@ https://dreamsheet-ai-mvp.vercel.app/
 
 ## Project Structure
 
+```txt
 src/
 ├── App.tsx                  # Main application flow and UI
 ├── main.tsx                 # React entry point
@@ -64,6 +65,7 @@ src/
 
 public/
 └── flourish-logo.png        # Current logo asset
+````
 
 ---
 
@@ -75,30 +77,31 @@ Install Node.js before running the project.
 
 ### 1. Install dependencies
 
-bash
+```bash
 npm install
-
+```
 
 ### 2. Add environment variables
 
 Create a `.env.local` file in the project root:
 
-env
+```env
 GEMINI_API_KEY=your_gemini_api_key_here
-
+```
 
 Do not commit `.env.local` to GitHub.
 
 ### 3. Start the development server
 
+```bash
 npm run dev
-
+```
 
 The app should run locally at:
 
-
+```txt
 http://localhost:3000
-
+```
 
 or the local URL shown in the terminal.
 
@@ -108,14 +111,15 @@ or the local URL shown in the terminal.
 
 To create a production build:
 
-
+```bash
 npm run build
-
+```
 
 To run TypeScript/lint checks:
 
-
+```bash
 npm run lint
+```
 
 ---
 
@@ -125,16 +129,17 @@ The app is deployed on Vercel.
 
 Recommended Vercel settings:
 
-
+```txt
 Framework: Vite
 Build command: npm run build
 Output directory: dist
-
+```
 
 The following environment variable should be added in Vercel Project Settings:
 
+```txt
 GEMINI_API_KEY
-
+```
 
 The API key should be stored in Vercel environment variables and should not be hardcoded into the source code.
 
@@ -186,9 +191,9 @@ This makes the application suitable for early coach testing even when AI respons
 
 Current MVP branch:
 
-
+```txt
 ui-fixes-logo-mvp
-
+```
 
 Recent completed work:
 
@@ -216,11 +221,11 @@ Planned work:
 * Allow admin review through Supabase dashboard
 * Later improve into a dedicated in-app admin dashboard
 
-
+````
 
 Then run:
 
-bash
+```bash
 git add README.md
 git commit -m "Update README for DreamSheet AI MVP"
 git push
