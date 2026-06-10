@@ -4567,7 +4567,7 @@ export default function App() {
                   <div className="space-y-1.5 text-left">
                     <label className="text-[10px] font-extrabold uppercase tracking-widest text-[#666666] flex items-center gap-1.5 justify-start">
                       <Bot size={12} className="text-emerald-600" />
-                      Coach/Facilitator Name (where relevant)
+                      Coach/Facilitator Name 
                     </label>
                     <input 
                       type="text"
