@@ -864,14 +864,16 @@ export default function App() {
 
   const generateEndGoalsForSubAreas = async (domainId: string, subAreaId?: string) => {
     const domain = domains.find(d => d.id === domainId);
-    if (!domain || !domain.domainVision) return;
+    if (!domain) return;
 
     setIsGeneratingSupportingGoals(true);
+    const visionContext = domain.domainVision || domain.vision || domain.domainGoal || domain.name;
     try {
       const updatedSubAreas = await Promise.all(domain.subAreas.map(async (sub) => {
         if (subAreaId && sub.id !== subAreaId) return sub;
+        if (!subAreaId && sub.goal?.trim()) return sub;
         
-        const { goal, recommendedDurationDays } = await coachingService.suggestSubAreaEndGoal(sub.name, domain.domainVision || "", timeHorizon);
+        const { goal, recommendedDurationDays } = await coachingService.suggestSubAreaEndGoal(sub.name, visionContext, timeHorizon);
         
         const start = new Date();
         start.setDate(start.getDate() + 1);
@@ -893,10 +895,29 @@ export default function App() {
     } catch (error) {
       console.error("Error generating end goals:", error);
       showAiFallback("AI suggestions could not be generated. You can write end-goals manually and continue.");
+      setDomains(prev => prev.map(d => {
+        if (d.id !== domainId) return d;
+        return {
+          ...d,
+          subAreas: d.subAreas.map(s => {
+            const shouldFill = subAreaId ? s.id === subAreaId : !s.goal?.trim();
+            return shouldFill ? { ...s, goal: s.goal?.trim() || "Define a clear end-goal for this focus area." } : s;
+          })
+        };
+      }));
     } finally {
       setIsGeneratingSupportingGoals(false);
     }
   };
+
+  useEffect(() => {
+    if (step !== CoachingStep.END_GOALS || !activeDomainId || isGeneratingSupportingGoals) return;
+    const domain = domains.find(d => d.id === activeDomainId);
+    if (!domain || domain.subAreas.length === 0) return;
+    if (domain.subAreas.some(s => !s.goal?.trim())) {
+      generateEndGoalsForSubAreas(activeDomainId);
+    }
+  }, [step, activeDomainId]);
 
   const updateSubAreaDates = (domainId: string, subAreaId: string, field: 'startDate' | 'finishDate', value: string) => {
     setDomains(prev => prev.map(d => {
@@ -946,6 +967,7 @@ export default function App() {
               ...s,
               actionSteps: steps.map((st: any) => ({
                 task: st.task,
+                measure: st.measure || "Clear completion measure defined.",
                 obstacle: st.obstacle,
                 overcome: st.overcome,
                 startDate: st.startDate || "",
@@ -1611,7 +1633,7 @@ export default function App() {
         ...d,
         subAreas: d.subAreas.map(s => {
           if (s.id !== subAreaId) return s;
-          const updatedActionSteps = [...(s.actionSteps || []), { task: 'New Action Step', dueDate: 'TBD', progress: 0 }];
+          const updatedActionSteps = [...(s.actionSteps || []), { task: 'New Action Step', measure: '', dueDate: 'TBD', progress: 0 }];
           return { ...s, actionSteps: updatedActionSteps };
         })
       };
@@ -2060,8 +2082,8 @@ export default function App() {
                   <Check size={12} strokeWidth={3} />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-widest leading-none">Selected Focus Areas</h4>
-                  <p className="text-[10px] text-emerald-700/80 font-medium">Click a pill to switch active domain focus</p>
+                  <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-widest leading-none">Active Domains</h4>
+                  <p className="text-[10px] text-emerald-700/80 font-medium">Switch domain to review its 4 Focus Areas</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto pr-1">
@@ -2076,10 +2098,16 @@ export default function App() {
                           ? "bg-emerald-600 text-white ring-2 ring-emerald-500/20 shadow-sm"
                           : "bg-emerald-100 hover:bg-emerald-200 text-emerald-800"
                       )}
-                    >
-                      <span>{dom.name}</span>
-                      {dom.currentRating !== undefined && dom.futureRating !== undefined && (
+                      >
+                        <span>{dom.name}</span>
                         <span className={cn(
+                          "text-[9px] px-1 py-0.5 rounded font-mono",
+                          activeDomainId === dom.id ? "bg-emerald-700 text-emerald-100" : "bg-emerald-200 text-emerald-800"
+                        )}>
+                          {dom.subAreas.length} FA
+                        </span>
+                        {dom.currentRating !== undefined && dom.futureRating !== undefined && (
+                          <span className={cn(
                           "text-[9px] px-1 py-0.5 rounded font-mono",
                           activeDomainId === dom.id ? "bg-emerald-700 text-emerald-100" : "bg-emerald-200 text-emerald-800"
                         )}>
@@ -2120,7 +2148,7 @@ export default function App() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="min-h-full overflow-y-auto flex flex-col justify-center font-gothic custom-scrollbar py-4 md:py-6 space-y-4 md:space-y-6"
+                className="min-h-full overflow-y-auto flex flex-col justify-start md:justify-center font-gothic custom-scrollbar py-4 md:py-6 space-y-4 md:space-y-6"
               >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8 w-full items-center">
                   {/* Left Column: Heading & Distraction Release */}
@@ -2146,7 +2174,7 @@ export default function App() {
                         type="text" 
                         value={currentDistraction}
                         onChange={(e) => setCurrentDistraction(e.target.value)}
-                        placeholder="Type a distraction and release it..." 
+                        placeholder="Type a distraction and click Enter to release it..."
                         className="w-full px-4 py-2.5 rounded-xl border border-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white shadow-sm text-sm"
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && currentDistraction) {
@@ -2226,7 +2254,7 @@ export default function App() {
                       onClick={() => skipToStep(CoachingStep.DOMAIN)}
                       className="bg-emerald-600 text-white px-8 py-3.5 rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/10 uppercase tracking-widest text-xs md:text-sm"
                     >
-                      Continue to Domains
+                      CONTINUE TO D: DOMAINS
                       <ArrowRight size={16} />
                     </button>
                   </div>
@@ -2262,7 +2290,7 @@ export default function App() {
                     <span className="text-lg font-bold tracking-tight text-stone-900">DREAMsheet AI</span>
                   </motion.div>
                   
-                  <h1 className="text-xl md:text-3xl font-light text-stone-900 leading-tight text-center md:text-left w-full">
+                  <h1 className="text-lg sm:text-2xl md:text-3xl font-light text-stone-900 leading-tight text-center md:text-left w-full sm:whitespace-nowrap">
                     Welcome to your <span className="font-serif italic text-emerald-700">Strategic Transformation</span>
                   </h1>
                   
@@ -2452,6 +2480,8 @@ export default function App() {
                                     }
                                   }}
                                   disabled={!isCompleted && completedDomainIds.length >= 6}
+                                  title={isCompleted ? "Domain Processed & Retained - Click mini 'x' to unlock/delete" : domain.description}
+                                  aria-label={`${domain.name}: ${isCompleted ? "Domain Processed & Retained" : domain.description}`}
                                   className={cn(
                                     "px-4 md:px-6 py-2.5 md:py-3 rounded-xl text-[10px] md:text-xs font-bold uppercase tracking-widest transition-all border shadow-sm pr-8",
                                     selectedRoles.includes(domain.name)
@@ -2476,9 +2506,9 @@ export default function App() {
                                     <X size={10} className="stroke-[3]" />
                                   </button>
                                 )}
-                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 bg-stone-900 text-white text-[10px] rounded-lg opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity z-50 text-center">
+                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 p-2.5 bg-stone-900 text-white text-[10px] rounded-lg opacity-0 pointer-events-none group-hover/tooltip:opacity-100 group-focus-within/tooltip:opacity-100 transition-opacity z-50 text-center shadow-xl">
                                   {isCompleted ? "Domain Processed & Retained - Click mini 'x' to unlock/delete" : domain.description}
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-8 border-transparent border-t-stone-900"></div>
+                                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-8 border-transparent border-b-stone-900"></div>
                                 </div>
                               </div>
                             );
@@ -2641,7 +2671,26 @@ export default function App() {
                                 ))}
                               </div>
                             ) : (
-                              <div className="relative">
+                              <div className="space-y-3">
+                                {idx === 4 && (
+                                  <button
+                                    onClick={generateDiscoveryObstacles}
+                                    disabled={isGeneratingDiscoveryObstacles}
+                                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-100 transition-colors border border-emerald-100 disabled:opacity-50"
+                                  >
+                                    {isGeneratingDiscoveryObstacles ? (
+                                      <>
+                                        <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+                                        Thinking...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Sparkles size={12} />
+                                        Help me identify obstacles
+                                      </>
+                                    )}
+                                  </button>
+                                )}
                                 <textarea
                                   value={resp.answer}
                                   onChange={(e) => {
@@ -2652,27 +2701,6 @@ export default function App() {
                                   placeholder={idx === 4 ? "List your obstacles or use the AI to help you..." : "Your reflection..."}
                                   className="w-full h-32 px-4 md:px-6 py-3 md:py-4 rounded-2xl border border-stone-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white shadow-sm text-sm resize-none"
                                 />
-                                {idx === 4 && (
-                                  <div className="absolute bottom-4 right-4">
-                                    <button
-                                      onClick={generateDiscoveryObstacles}
-                                      disabled={isGeneratingDiscoveryObstacles}
-                                      className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-100 transition-colors border border-emerald-100"
-                                    >
-                                      {isGeneratingDiscoveryObstacles ? (
-                                        <>
-                                          <div className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                                          Thinking...
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Sparkles size={12} />
-                                          Help me identify obstacles
-                                        </>
-                                      )}
-                                    </button>
-                                  </div>
-                                )}
                               </div>
                             )}
                           </div>
@@ -3133,7 +3161,7 @@ export default function App() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="h-full flex flex-col gap-6 overflow-y-auto"
+                className="min-h-full flex flex-col gap-6 overflow-y-auto custom-scrollbar"
               >
                 <div className="flex flex-col md:flex-row items-center md:items-end justify-between gap-4 shrink-0 text-center md:text-left">
                   <div className="max-w-2xl flex flex-col items-center md:items-start w-full">
@@ -3159,25 +3187,35 @@ export default function App() {
                   )}
                   {domains.filter(d => d.id === activeDomainId).map(d => (
                     <div key={d.id} className="space-y-6 max-w-3xl mx-auto">
+                      {isGeneratingSupportingGoals && (
+                        <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 rounded-2xl px-4 py-3 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+                          <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="inline-flex">
+                            <Bot size={14} />
+                          </motion.div>
+                          Generating missing End-goals...
+                        </div>
+                      )}
                       {d.subAreas.map((sub, idx) => (
-                        <div key={sub.id} className="bg-white p-4 sm:p-6 md:p-8 rounded-3xl shadow-sm border border-stone-200 space-y-5 md:space-y-6">
-                          <div className="flex items-center justify-between">
+                        <div key={sub.id} className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl md:rounded-3xl shadow-sm border border-stone-200 space-y-5 md:space-y-6">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
                               <span className="text-[10px] font-bold text-emerald-600 tracking-wider shrink-0">Focus Area #{idx + 1}</span>
                               <span className="text-sm font-bold text-stone-800 block break-words">{sub.name}</span>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <button 
                                 onClick={() => generateEndGoalsForSubAreas(d.id, sub.id)}
                                 disabled={isGeneratingSupportingGoals}
-                                className="flex items-center justify-center w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full hover:bg-emerald-100 transition-colors border border-emerald-100 disabled:opacity-50 cursor-pointer shadow-sm"
-                                title="Suggest End-goal"
+                                className="flex items-center justify-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-100 disabled:opacity-50 cursor-pointer shadow-sm text-[9px] sm:text-[10px] font-bold uppercase tracking-widest"
+                                title="Suggest alternative end-goal"
                               >
                                 {isGeneratingSupportingGoals ? (
                                   <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="inline-flex">
                                     <Bot size={12} />
                                   </motion.div>
                                 ) : <Sparkles size={12} />}
+                                <span className="hidden sm:inline">Suggest Alternative End-goals</span>
+                                <span className="sm:hidden">Regenerate End-goal</span>
                               </button>
                               <button 
                                 onClick={() => deleteSubArea(d.id, sub.id)}
@@ -3276,8 +3314,8 @@ export default function App() {
                         </button>
                       )}
 
-                      {/* Domains End-goals Textarea Section */}
-                      <div className="space-y-4 pt-8 border-t border-stone-200 mt-8">
+                      {/* Domain-level end-goal retained in data, hidden from the main UI because per-focus-area End-goals drive this workflow. TODO(David): confirm whether domainGoal should be surfaced in a future summary view. */}
+                      <div className="hidden space-y-4 pt-8 border-t border-stone-200 mt-8">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <Trophy size={14} className="text-emerald-500" />
@@ -3317,7 +3355,7 @@ export default function App() {
                             disabled={d.subAreas.length === 0 || d.subAreas.some(s => !s.goal?.trim())}
                             className="bg-emerald-600 text-white px-12 py-5 rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-2xl shadow-emerald-600/20 uppercase tracking-widest text-sm"
                           >
-                            Continue to Affirmations <Sparkles size={20} />
+                            CONTINUE TO A: AFFIRMATIONS <Sparkles size={20} />
                           </button>
                         </div>
                       </div>
@@ -3759,6 +3797,36 @@ export default function App() {
                                                     </label>
                                                   </div>
 
+                                                  {/* Measure */}
+                                                  <div className="space-y-2">
+                                                    <div className="flex items-center gap-2">
+                                                      <LineChart size={12} className="text-emerald-500" />
+                                                      <label className="text-[8px] font-bold uppercase tracking-widest text-stone-400">Measure of Success</label>
+                                                    </div>
+                                                    <div className="hidden export-only text-xs leading-relaxed text-stone-800 whitespace-pre-wrap">
+                                                      {step.measure}
+                                                    </div>
+                                                    <textarea
+                                                      value={step.measure || ""}
+                                                      onChange={(e) => {
+                                                        setDomains(domains.map(dom => {
+                                                          if (dom.id !== domain.id) return dom;
+                                                          return {
+                                                            ...dom,
+                                                            subAreas: dom.subAreas.map(s => {
+                                                              if (s.id !== sub.id) return s;
+                                                              const updated = [...(s.actionSteps || [])];
+                                                              updated[stepIdx] = { ...updated[stepIdx], measure: e.target.value };
+                                                              return { ...s, actionSteps: updated };
+                                                            })
+                                                          };
+                                                        }));
+                                                      }}
+                                                      className="w-full bg-white border border-stone-200 rounded-xl p-3 text-xs leading-relaxed focus:ring-2 focus:ring-emerald-500/20 transition-all min-h-[60px] resize-none"
+                                                      placeholder="How will success be measured?"
+                                                    />
+                                                  </div>
+
                                                   {/* Obstacle */}
                                                   <div className="space-y-2">
                                                     <div className="flex items-center gap-2">
@@ -3832,7 +3900,7 @@ export default function App() {
                                                 ...dom,
                                                 subAreas: dom.subAreas.map(s => {
                                                   if (s.id !== sub.id) return s;
-                                                  const updated = [...(s.actionSteps || []), { task: "Manual Action Step", obstacle: "", overcome: "", progress: 0, startDate: "", endDate: "", isOngoing: false }];
+                                                  const updated = [...(s.actionSteps || []), { task: "Manual Action Step", measure: "", obstacle: "", overcome: "", progress: 0, startDate: "", endDate: "", isOngoing: false }];
                                                   return { ...s, actionSteps: updated };
                                                 })
                                               };
@@ -4032,19 +4100,37 @@ export default function App() {
                                         <label className="text-[9px] font-bold uppercase tracking-widest text-stone-400">Tactical Roadmap</label>
                                         <div className="space-y-3">
                                             {sub.actionSteps?.map((step, idx) => (
-                                                <div key={idx} className="flex gap-4 p-4 bg-white rounded-2xl border border-stone-100 shadow-sm flex-col">
-                                                    <div className="flex items-center gap-4">
+                                                <div key={idx} className="p-4 bg-white rounded-2xl border border-stone-100 shadow-sm space-y-3">
+                                                    <div className="flex items-start gap-4">
                                                         <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-bold shrink-0">{idx + 1}</div>
-                                                        <span className="text-sm font-bold text-stone-900">{step.task}</span>
+                                                        <div>
+                                                          <label className="text-[8px] font-bold uppercase tracking-widest text-stone-400">Task</label>
+                                                          <p className="text-sm font-bold text-stone-900 leading-relaxed">{step.task}</p>
+                                                        </div>
                                                     </div>
-                                                    {(step.startDate || step.endDate || step.isOngoing) && (
-                                                      <div className="flex items-center gap-2 pl-10">
-                                                        <Calendar size={12} className="text-stone-400" />
-                                                        <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
-                                                          {step.startDate || 'TBD'} - {step.isOngoing ? 'Ongoing' : (step.endDate || 'TBD')}
-                                                        </span>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-0 sm:pl-10">
+                                                      <div className="space-y-1">
+                                                        <label className="text-[8px] font-bold uppercase tracking-widest text-stone-400">Timeline / Dates</label>
+                                                        <div className="flex items-center gap-2">
+                                                          <Calendar size={12} className="text-stone-400" />
+                                                          <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest">
+                                                            {step.startDate || step.dueDate || 'TBD'} - {step.isOngoing ? 'Ongoing' : (step.endDate || step.dueDate || 'TBD')}
+                                                          </span>
+                                                        </div>
                                                       </div>
-                                                    )}
+                                                      <div className="space-y-1">
+                                                        <label className="text-[8px] font-bold uppercase tracking-widest text-stone-400">Measure</label>
+                                                        <p className="text-xs text-stone-700 leading-relaxed">{step.measure || "Measure of success to be defined."}</p>
+                                                      </div>
+                                                      <div className="space-y-1">
+                                                        <label className="text-[8px] font-bold uppercase tracking-widest text-stone-400">Obstacle</label>
+                                                        <p className="text-xs text-stone-700 leading-relaxed">{step.obstacle || "Obstacle to be defined."}</p>
+                                                      </div>
+                                                      <div className="space-y-1">
+                                                        <label className="text-[8px] font-bold uppercase tracking-widest text-stone-400">Overcome / Solution</label>
+                                                        <p className="text-xs text-stone-700 leading-relaxed">{step.overcome || "Solution to be defined."}</p>
+                                                      </div>
+                                                    </div>
                                                 </div>
                                             ))}
                                         </div>
@@ -4236,6 +4322,9 @@ export default function App() {
                                             <span className="text-[9px] font-bold text-stone-400 uppercase shrink-0 whitespace-nowrap mt-0.5">
                                               {a.isOngoing ? "Ongoing" : (a.startDate && a.endDate ? `${a.startDate} - ${a.endDate}` : (a.dueDate || a.endDate || ""))}
                                             </span>
+                                          </div>
+                                          <div className="text-[10px] text-stone-500 leading-relaxed">
+                                            <span className="font-bold uppercase tracking-widest text-stone-400">Measure:</span> {a.measure || "Measure of success to be defined."}
                                           </div>
                                           <div className="h-1 bg-stone-100 rounded-full overflow-hidden">
                                             <div className="h-full bg-emerald-500" style={{ width: `${a.progress || 0}%` }}></div>
@@ -4454,7 +4543,7 @@ export default function App() {
                     Initialize Your <span className="font-sans not-italic font-bold text-emerald-700">DREAMsheet Session</span>
                   </h3>
                   <p className="text-stone-500 text-xs md:text-sm font-light max-w-sm">
-                    Enter the names of the Coachee and their Coach to customize your strategic plan and active roadmap.
+                    Enter your Client name and your Coach (if relevant) to customize your strategic plan and active roadmap.
                   </p>
                 </div>
 
@@ -4463,7 +4552,7 @@ export default function App() {
                   <div className="space-y-1.5 text-left">
                     <label className="text-[10px] font-extrabold uppercase tracking-widest text-[#666666] flex items-center gap-1.5 justify-start">
                       <User size={12} className="text-emerald-600" />
-                      Coachee Name (Client/Recipient)
+                      Client Name (Coachee)
                     </label>
                     <input 
                       type="text"
@@ -4478,7 +4567,7 @@ export default function App() {
                   <div className="space-y-1.5 text-left">
                     <label className="text-[10px] font-extrabold uppercase tracking-widest text-[#666666] flex items-center gap-1.5 justify-start">
                       <Bot size={12} className="text-emerald-600" />
-                      Coach Name (Facilitator)
+                      Coach/Facilitator Name (where relevant)
                     </label>
                     <input 
                       type="text"
@@ -4855,12 +4944,12 @@ const QuizOverlay = ({
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="min-h-full overflow-y-auto p-5 md:p-8 flex flex-col justify-center max-w-3xl mx-auto w-full font-serif"
+                className="min-h-full overflow-y-auto p-4 sm:p-5 md:p-8 flex flex-col justify-start sm:justify-center max-w-3xl mx-auto w-full font-serif custom-scrollbar"
               >
                 <div className="space-y-6 md:space-y-8">
                   <div className="space-y-3 text-center">
                     <span className="text-[10px] font-bold text-emerald-600 font-sans uppercase tracking-[0.2em]">Question {currentQuizIndex + 1} of 10</span>
-                    <h3 className="text-2xl md:text-3xl italic text-stone-900 leading-tight">{currentQuestion.question}</h3>
+                    <h3 className="text-lg sm:text-xl md:text-2xl italic text-stone-900 leading-tight">{currentQuestion.question}</h3>
                   </div>
 
                   <div>
@@ -4986,7 +5075,7 @@ const QuizOverlay = ({
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="min-h-full overflow-y-auto p-5 md:p-8 flex flex-col justify-center max-w-3xl mx-auto w-full font-serif custom-scrollbar"
+                className="min-h-full overflow-y-auto p-4 sm:p-5 md:p-8 flex flex-col justify-start sm:justify-center max-w-3xl mx-auto w-full font-serif custom-scrollbar"
               >
                 {(() => {
                   const selected = (suggestedDomains.length > 0 ? suggestedDomains : FALLBACK_DOMAIN_SUGGESTIONS).filter(d => selectedDomainNames.includes(d.name));
@@ -4997,7 +5086,7 @@ const QuizOverlay = ({
                     <div className="space-y-8 md:space-y-12">
                       <div className="space-y-3 md:space-y-4 text-center">
                         <span className="text-[10px] font-bold text-emerald-600 font-sans uppercase tracking-[0.2em]">Step 3 — Rating {currentRatingIndex + 1} of {selected.length}</span>
-                        <h3 className="text-2xl md:text-4xl italic text-stone-900 leading-tight">{currentDomain.name}</h3>
+                        <h3 className="text-lg sm:text-xl md:text-2xl italic text-stone-900 leading-tight">{currentDomain.name}</h3>
                         <p className="text-stone-500 text-xs md:text-sm">Please rate this domain based on your current reality.</p>
                       </div>
 

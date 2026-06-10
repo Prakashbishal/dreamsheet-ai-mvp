@@ -457,7 +457,7 @@ Return the result as a JSON object.`;
     return JSON.parse(response.text);
   },
 
-  async suggestActionStepsForGoal(goal: string, domainName: string): Promise<{ task: string, obstacle: string, overcome: string, startDate: string, endDate: string }[]> {
+  async suggestActionStepsForGoal(goal: string, domainName: string): Promise<{ task: string, measure: string, obstacle: string, overcome: string, startDate: string, endDate: string }[]> {
     requireGeminiApiKey();
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const prompt = `For the following End-goal in the domain "${domainName}":
@@ -467,6 +467,7 @@ Return the result as a JSON object.`;
     Please suggest 3 to 5 "Specific Action Steps" to achieve this goal.
     For each step, identify:
     - "task": string (The specific action step)
+    - "measure": string (A clear measure of success for the step)
     - "obstacle": string (One common obstacle for this step)
     - "overcome": string (One strategy to overcome the obstacle)
     - "startDate": string (suggested start strictly in YYYY-MM-DD format)
@@ -484,13 +485,14 @@ Return the result as a JSON object.`;
           items: {
             type: Type.OBJECT,
             properties: {
-              task: { type: Type.STRING },
-              obstacle: { type: Type.STRING },
-              overcome: { type: Type.STRING },
+                  task: { type: Type.STRING },
+                  measure: { type: Type.STRING },
+                  obstacle: { type: Type.STRING },
+                  overcome: { type: Type.STRING },
               startDate: { type: Type.STRING },
               endDate: { type: Type.STRING }
             },
-            required: ["task", "obstacle", "overcome", "startDate", "endDate"]
+                required: ["task", "measure", "obstacle", "overcome", "startDate", "endDate"]
           }
         }
       }
