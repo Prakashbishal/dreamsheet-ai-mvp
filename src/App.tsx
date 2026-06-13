@@ -3018,11 +3018,6 @@ export default function App() {
                             <p className="text-stone-500 text-sm italic">
                               Select up to 4. To change a selection, deselect one first. (Currently {domains.find(d => d.id === activeDomainId)?.subAreas.filter(s => s.selected !== false).length || 0}/4 selected)
                             </p>
-                            {(domains.find(d => d.id === activeDomainId)?.subAreas.length || 0) === 0 && (
-                              <p className="text-amber-700 text-sm bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-                                AI suggestions could not be generated. You can continue with the fallback focus areas or add your own.
-                              </p>
-                            )}
                             <div className="flex justify-center w-full mt-2">
                               <button 
                                 onClick={() => generateAlternativeSubAreas(activeDomainId!)}
@@ -3037,6 +3032,11 @@ export default function App() {
                                 {isGeneratingAlternatives ? "Generating Alternatives..." : "Suggest Alternative Focus Areas"}
                               </button>
                             </div>
+                            {(domains.find(d => d.id === activeDomainId)?.subAreas.length || 0) === 0 && (
+                              <p className="max-w-md text-[11px] leading-relaxed text-amber-700/80">
+                                AI suggestions were unavailable, so fallback focus areas are shown. You can continue or add your own.
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex flex-col sm:flex-row gap-3 bg-white border border-stone-200 rounded-2xl p-3 shadow-sm">
