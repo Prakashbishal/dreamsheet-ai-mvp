@@ -434,6 +434,12 @@ export default function App() {
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
+  const isPlaceholderEndGoal = (goal?: string) => {
+    const normalized = (goal || "").trim().toLowerCase().replace(/[?.\s]+$/g, "");
+    return normalized === "define a clear end-goal for this focus area" ||
+      normalized === "what specific outcome do you want to achieve for this focus area";
+  };
+
   const buildContextualActionStepFallback = (sub: SubArea, domain?: Domain): ActionStep => {
     const target = sub.goal?.trim() || sub.name?.trim() || "this focus area";
     const domainStart = domain?.subAreas.map(s => s.startDate).filter(Boolean).sort()[0] || "";
@@ -1000,7 +1006,7 @@ export default function App() {
     try {
       const updatedSubAreas = await Promise.all(domain.subAreas.map(async (sub) => {
         if (subAreaId && sub.id !== subAreaId) return sub;
-        if (!subAreaId && sub.goal?.trim()) return sub;
+        if (!subAreaId && sub.goal?.trim() && !isPlaceholderEndGoal(sub.goal)) return sub;
         
         const { goal, recommendedDurationDays } = await coachingService.suggestSubAreaEndGoal(sub.name, visionContext, timeHorizon);
         
@@ -1029,8 +1035,8 @@ export default function App() {
         return {
           ...d,
           subAreas: d.subAreas.map(s => {
-            const shouldFill = subAreaId ? s.id === subAreaId : !s.goal?.trim();
-            return shouldFill ? { ...s, goal: s.goal?.trim() || "Define a clear end-goal for this focus area." } : s;
+            const shouldFill = subAreaId ? s.id === subAreaId : !s.goal?.trim() || isPlaceholderEndGoal(s.goal);
+            return shouldFill ? { ...s, goal: isPlaceholderEndGoal(s.goal) ? "" : (s.goal?.trim() || "") } : s;
           })
         };
       }));
@@ -1043,7 +1049,7 @@ export default function App() {
     if (step !== CoachingStep.END_GOALS || !activeDomainId || isGeneratingSupportingGoals) return;
     const domain = domains.find(d => d.id === activeDomainId);
     if (!domain || domain.subAreas.length === 0) return;
-    if (domain.subAreas.some(s => !s.goal?.trim())) {
+    if (domain.subAreas.some(s => !s.goal?.trim() || isPlaceholderEndGoal(s.goal))) {
       generateEndGoalsForSubAreas(activeDomainId);
     }
   }, [step, activeDomainId]);
@@ -3456,7 +3462,7 @@ export default function App() {
                           <div className="space-y-4">
                             <label className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block break-words">End-goal</label>
                             <textarea 
-                              value={sub.goal || ""}
+                              value={isPlaceholderEndGoal(sub.goal) ? "" : (sub.goal || "")}
                               onChange={(e) => setDomains(domains.map(dom => {
                                 if (dom.id !== d.id) return dom;
                                 return {
@@ -3464,9 +3470,14 @@ export default function App() {
                                   subAreas: dom.subAreas.map(s => s.id === sub.id ? { ...s, goal: e.target.value } : s)
                                 };
                               }))}
-                              placeholder="What specific outcome do you want to achieve for this focus area?"
+                              placeholder={`Write a clear end-goal for ${sub.name || "this focus area"}...`}
                               className="w-full bg-stone-50 border border-stone-100 rounded-2xl p-4 md:p-6 text-sm sm:text-base md:text-lg font-light italic focus:ring-2 focus:ring-emerald-500 transition-all min-h-[120px] resize-none leading-relaxed"
                             />
+                            {(!sub.goal?.trim() || isPlaceholderEndGoal(sub.goal)) && (
+                              <p className="text-xs text-amber-700/80">
+                                Add an end-goal before continuing to Affirmations.
+                              </p>
+                            )}
                           </div>
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
@@ -3579,7 +3590,7 @@ export default function App() {
                           </button>
                           <button 
                             onClick={() => skipToStep(CoachingStep.AFFIRMATIONS)}
-                            disabled={d.subAreas.length === 0 || d.subAreas.some(s => !s.goal?.trim())}
+                            disabled={d.subAreas.length === 0 || d.subAreas.some(s => !s.goal?.trim() || isPlaceholderEndGoal(s.goal))}
                             className="bg-emerald-600 text-white px-12 py-5 rounded-2xl font-bold flex items-center gap-3 hover:bg-emerald-700 transition-all shadow-2xl shadow-emerald-600/20 uppercase tracking-widest text-sm"
                           >
                             CONTINUE TO A: AFFIRMATIONS <Sparkles size={20} />
