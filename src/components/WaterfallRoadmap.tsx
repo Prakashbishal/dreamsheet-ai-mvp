@@ -429,7 +429,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
 
   const renderTooltip = (row: TimelineRow) => (
     <div
-      className="no-export fixed z-[9999] min-w-[260px] max-w-[340px] rounded-xl border border-stone-950 bg-stone-950 p-3 text-left text-[11px] leading-relaxed text-white shadow-2xl pointer-events-none"
+      className="fixed z-[9999] min-w-[260px] max-w-[340px] rounded-xl border border-stone-950 bg-stone-950 p-3 text-left text-[11px] leading-relaxed text-white shadow-2xl pointer-events-none"
       style={{ left: tooltipPosition.x, top: tooltipPosition.y }}
     >
       <div className="mb-1 text-[9px] font-extrabold uppercase tracking-wider text-emerald-400">{row.type} Info</div>
@@ -465,7 +465,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
         </div>
 
         {/* Toolbar controls */}
-        <div className="no-export flex flex-wrap items-center gap-3 self-start xl:self-center">
+        <div className="flex flex-wrap items-center gap-3 self-start xl:self-center">
           {/* Domain Filter Dropdown */}
           <div className="relative flex items-center bg-white rounded-xl border border-stone-200 px-3 py-1.5 shadow-sm text-xs">
             <span className="text-stone-400 font-bold mr-2 uppercase text-[9px] tracking-wider">Show:</span>
@@ -595,7 +595,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
                           }}
                           aria-label={row.type === 'domain' ? `${expandedRows[row.id] ? 'Collapse' : 'Expand'} ${row.name} child rows` : `${expandedRows[row.id] ? 'Hide' : 'Show'} details for ${row.name}`}
                           title={row.type === 'domain' ? `${expandedRows[row.id] ? 'Collapse' : 'Expand'} child rows` : `${expandedRows[row.id] ? 'Hide' : 'Show'} details`}
-                          className="no-export w-5 h-5 rounded hover:bg-stone-100 flex items-center justify-center text-stone-500 shrink-0 transition-all focus:outline-none"
+                          className="w-5 h-5 rounded hover:bg-stone-100 flex items-center justify-center text-stone-500 shrink-0 transition-all focus:outline-none"
                         >
                           {expandedRows[row.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </button>
@@ -737,7 +737,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
             );
           })}
         </div>
-        <div className="no-export text-stone-400 font-medium font-mono text-[9px]">
+        <div className="text-stone-400 font-medium font-mono text-[9px]">
           Hover elements to inspect detailed durations
         </div>
       </div>
