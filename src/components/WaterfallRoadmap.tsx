@@ -49,6 +49,23 @@ const DOMAIN_COLOR_PALETTES = [
   { hex: '#8b5cf6', bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' }, // Violet
 ];
 
+const normalizeStepText = (value?: string) => (value || "").trim().toLowerCase().replace(/[.\s]+$/g, "");
+
+const isPlaceholderActionStep = (step: ActionStep) => {
+  const task = normalizeStepText(step.task);
+  const measure = normalizeStepText(step.measure);
+  const obstacle = normalizeStepText(step.obstacle);
+  const overcome = normalizeStepText(step.overcome);
+  const hasTbdDates = normalizeStepText(step.startDate || step.dueDate) === "tbd" && normalizeStepText(step.endDate || step.dueDate) === "tbd";
+  const hasEmptyDates = !step.startDate?.trim() && !step.endDate?.trim() && !step.dueDate?.trim();
+  const hasGenericDetails =
+    measure === "measure of success to be defined" &&
+    obstacle === "obstacle to be defined" &&
+    overcome === "solution to be defined";
+
+  return task === "manual action step" || hasGenericDetails || ((hasTbdDates || hasEmptyDates) && hasGenericDetails);
+};
+
 export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, clientName }) => {
   // States
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>(() => {
@@ -170,8 +187,10 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
         let subareaMinDateStr = sub.startDate;
         let subareaMaxDateStr = sub.finishDate;
 
+        const usableActionSteps = sub.actionSteps?.filter(step => !isPlaceholderActionStep(step)) || [];
+
         if (!subareaMinDateStr || !subareaMaxDateStr) {
-          sub.actionSteps?.forEach(st => {
+          usableActionSteps.forEach(st => {
             if (st.startDate && (!subareaMinDateStr || st.startDate < subareaMinDateStr)) {
               subareaMinDateStr = st.startDate;
             }
@@ -186,10 +205,10 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
           type: 'subarea',
           name: sub.goal || sub.name || "Focus Goal",
           detailTitle: sub.goal || sub.name || "Focus Goal",
-          measure: sub.successIndicator || sub.actionSteps?.map(step => step.measure).filter(Boolean).join(' | '),
-          obstacle: sub.obstacles?.map(item => item.obstacle).filter(Boolean).join(' | ') || sub.actionSteps?.map(step => step.obstacle).filter(Boolean).join(' | '),
-          overcome: sub.obstacles?.map(item => item.solution).filter(Boolean).join(' | ') || sub.actionSteps?.map(step => step.overcome).filter(Boolean).join(' | '),
-          contingency: sub.obstacles?.length || sub.actionSteps?.some(step => step.obstacle || step.overcome)
+          measure: sub.successIndicator || usableActionSteps.map(step => step.measure).filter(Boolean).join(' | '),
+          obstacle: sub.obstacles?.map(item => item.obstacle).filter(Boolean).join(' | ') || usableActionSteps.map(step => step.obstacle).filter(Boolean).join(' | '),
+          overcome: sub.obstacles?.map(item => item.solution).filter(Boolean).join(' | ') || usableActionSteps.map(step => step.overcome).filter(Boolean).join(' | '),
+          contingency: sub.obstacles?.length || usableActionSteps.some(step => step.obstacle || step.overcome)
             ? "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope."
             : undefined,
           startDate: subareaMinDateStr,
@@ -204,7 +223,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
 
         // Add action steps if visible
         if (showSteps) {
-          sub.actionSteps?.forEach((step, stepIdx) => {
+          usableActionSteps.forEach((step, stepIdx) => {
             rows.push({
               id: `step-${sub.id}-${stepIdx}`,
               type: 'step',

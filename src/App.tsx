@@ -450,15 +450,37 @@ export default function App() {
     };
   };
 
+  const normalizeStepText = (value?: string) => (value || "").trim().toLowerCase().replace(/[.\s]+$/g, "");
+
+  const isPlaceholderActionStep = (step: ActionStep) => {
+    const task = normalizeStepText(step.task);
+    const measure = normalizeStepText(step.measure);
+    const obstacle = normalizeStepText(step.obstacle);
+    const overcome = normalizeStepText(step.overcome);
+    const hasTbdDates = normalizeStepText(step.startDate || step.dueDate) === "tbd" && normalizeStepText(step.endDate || step.dueDate) === "tbd";
+    const hasEmptyDates = !step.startDate?.trim() && !step.endDate?.trim() && !step.dueDate?.trim();
+    const hasGenericDetails =
+      measure === "measure of success to be defined" &&
+      obstacle === "obstacle to be defined" &&
+      overcome === "solution to be defined";
+
+    return task === "manual action step" || hasGenericDetails || ((hasTbdDates || hasEmptyDates) && hasGenericDetails);
+  };
+
+  const hasUsableActionSteps = (sub: SubArea) => Boolean(sub.actionSteps?.some(step => !isPlaceholderActionStep(step)));
+
   const getPlanActionSteps = (sub: SubArea, domain?: Domain) => (
-    sub.actionSteps && sub.actionSteps.length > 0
-      ? sub.actionSteps
+    hasUsableActionSteps(sub)
+      ? sub.actionSteps!.filter(step => !isPlaceholderActionStep(step))
       : [buildContextualActionStepFallback(sub, domain)]
   );
 
   const getContingencyPlan = (step: ActionStep) => {
     if (step.contingency?.trim()) {
       return step.contingency;
+    }
+    if (isPlaceholderActionStep(step)) {
+      return "If the obstacle has not yet been identified, review this focus area with the coach and define one likely blocker before execution.";
     }
     if (step.obstacle === "The next obstacle for this focus area still needs to be identified.") {
       return "If the obstacle has not yet been identified, review this focus area with the coach and define one likely blocker before execution.";
@@ -1047,7 +1069,7 @@ export default function App() {
 
     const missingTargets = domains.flatMap(domain =>
       domain.subAreas
-        .filter(sub => sub.selected !== false && (!sub.actionSteps || sub.actionSteps.length === 0))
+        .filter(sub => sub.selected !== false && !hasUsableActionSteps(sub))
         .map(sub => ({ domain, sub }))
     );
 
@@ -1103,7 +1125,7 @@ export default function App() {
       setDomains(prev => prev.map(domain => ({
         ...domain,
         subAreas: domain.subAreas.map(sub => {
-          if (sub.actionSteps && sub.actionSteps.length > 0) return sub;
+          if (hasUsableActionSteps(sub)) return sub;
           const match = generated.find(item => item.domainId === domain.id && item.subId === sub.id);
           return match ? { ...sub, actionSteps: match.steps } : sub;
         })
@@ -1116,7 +1138,7 @@ export default function App() {
   useEffect(() => {
     if (step !== CoachingStep.MASTERPLAN && step !== CoachingStep.CONSOLIDATED_PLAN) return;
     if (isPreparingTacticalRoadmap) return;
-    if (!domains.some(domain => domain.subAreas.some(sub => sub.selected !== false && (!sub.actionSteps || sub.actionSteps.length === 0)))) return;
+    if (!domains.some(domain => domain.subAreas.some(sub => sub.selected !== false && !hasUsableActionSteps(sub)))) return;
     prepareMissingTacticalRoadmaps();
   }, [step, domains, isPreparingTacticalRoadmap]);
 
