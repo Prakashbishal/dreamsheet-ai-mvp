@@ -3581,18 +3581,24 @@ export default function App() {
                           <div className="space-y-3 pt-2">
                             <div className="flex items-center justify-between">
                               <label className="text-[10px] font-extrabold text-stone-400 uppercase tracking-wider block">Empowering Affirmation</label>
-                              <button 
-                                onClick={() => generateGoalAffirmations(domain.id, sub.id)}
-                                disabled={isGeneratingGoalAffirmations}
-                                className="flex items-center justify-center w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full hover:bg-emerald-100 transition-colors border border-emerald-100 disabled:opacity-50 cursor-pointer shadow-sm"
-                                title="Refresh Affirmation"
-                              >
-                                {isGeneratingGoalAffirmations ? (
-                                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="inline-flex">
-                                    <Bot size={12} />
-                                  </motion.div>
-                                ) : <Sparkles size={12} />}
-                              </button>
+                              <div className="relative group">
+                                <button 
+                                  onClick={() => generateGoalAffirmations(domain.id, sub.id)}
+                                  disabled={isGeneratingGoalAffirmations}
+                                  className="flex items-center justify-center w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full hover:bg-emerald-100 transition-colors border border-emerald-100 disabled:opacity-50 cursor-pointer shadow-sm"
+                                  title="Regenerate this affirmation using AI"
+                                  aria-label="Regenerate this affirmation using AI"
+                                >
+                                  {isGeneratingGoalAffirmations ? (
+                                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="inline-flex">
+                                      <Bot size={12} />
+                                    </motion.div>
+                                  ) : <Sparkles size={12} />}
+                                </button>
+                                <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-52 rounded-xl bg-stone-900 px-3 py-2 text-xs font-medium text-white shadow-lg group-hover:block group-focus-within:block">
+                                  Regenerate this affirmation using AI
+                                </div>
+                              </div>
                             </div>
                             <textarea 
                               value={sub.affirmation || ""}
