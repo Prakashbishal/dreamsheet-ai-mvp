@@ -213,9 +213,9 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
               measure: step.measure,
               obstacle: step.obstacle,
               overcome: step.overcome,
-              contingency: step.obstacle || step.overcome
+              contingency: step.contingency || (step.obstacle || step.overcome
                 ? "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope."
-                : undefined,
+                : undefined),
               startDate: step.startDate || subareaMinDateStr, // fallback to subarea dates
               endDate: step.endDate || subareaMaxDateStr,
               isOngoing: step.isOngoing,

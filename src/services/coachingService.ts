@@ -457,11 +457,14 @@ Return the result as a JSON object.`;
     return JSON.parse(response.text);
   },
 
-  async suggestActionStepsForGoal(goal: string, domainName: string): Promise<{ task: string, measure: string, obstacle: string, overcome: string, startDate: string, endDate: string }[]> {
+  async suggestActionStepsForGoal(goal: string, domainName: string, context?: { focusAreaName?: string; startDate?: string; finishDate?: string; obstacles?: string[] }): Promise<{ task: string, measure: string, obstacle: string, overcome: string, startDate: string, endDate: string }[]> {
     requireGeminiApiKey();
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
     const prompt = `For the following End-goal in the domain "${domainName}":
     Goal: "${goal}"
+    ${context?.focusAreaName ? `Focus area: "${context.focusAreaName}"` : ""}
+    ${context?.startDate || context?.finishDate ? `Preferred timeline: ${context.startDate || "TBD"} to ${context.finishDate || "TBD"}. Keep suggested step dates inside this range when possible.` : ""}
+    ${context?.obstacles?.length ? `Known obstacles to consider: ${context.obstacles.join("; ")}` : ""}
     Today's date is ${today}.
     
     Please suggest 3 to 5 "Specific Action Steps" to achieve this goal.

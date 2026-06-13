@@ -374,6 +374,7 @@ export default function App() {
   const [isGeneratingGoalAffirmations, setIsGeneratingGoalAffirmations] = useState(false);
   const [isGeneratingSupportingGoals, setIsGeneratingSupportingGoals] = useState(false);
   const [isGeneratingActionSteps, setIsGeneratingActionSteps] = useState(false);
+  const [isPreparingTacticalRoadmap, setIsPreparingTacticalRoadmap] = useState(false);
   const [expandedSubAreas, setExpandedSubAreas] = useState<Record<string, boolean>>({});
   const [isGeneratingObstacles, setIsGeneratingObstacles] = useState(false);
   const [isGeneratingObstacleSolution, setIsGeneratingObstacleSolution] = useState(false);
@@ -430,21 +431,38 @@ export default function App() {
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
-  const getPlanActionSteps = (sub: SubArea) => (
+  const buildContextualActionStepFallback = (sub: SubArea, domain?: Domain): ActionStep => {
+    const target = sub.goal?.trim() || sub.name?.trim() || "this focus area";
+    const domainStart = domain?.subAreas.map(s => s.startDate).filter(Boolean).sort()[0] || "";
+    const domainFinishDates = domain?.subAreas.map(s => s.finishDate).filter(Boolean).sort() || [];
+    const domainFinish = domainFinishDates[domainFinishDates.length - 1] || "";
+
+    return {
+      task: `Define the first practical action for: ${target}`,
+      startDate: sub.startDate || domainStart,
+      endDate: sub.isOngoing ? "" : (sub.finishDate || domainFinish),
+      isOngoing: sub.isOngoing,
+      measure: "Progress is measured by completing the first defined action for this focus area.",
+      obstacle: "The next obstacle for this focus area still needs to be identified.",
+      overcome: "Review the obstacle and choose one practical adjustment.",
+      contingency: "If progress stalls, reduce the scope and complete a smaller version of the action.",
+      progress: 0
+    };
+  };
+
+  const getPlanActionSteps = (sub: SubArea, domain?: Domain) => (
     sub.actionSteps && sub.actionSteps.length > 0
       ? sub.actionSteps
-      : [{
-          task: "Manual Action Step",
-          startDate: "",
-          endDate: "",
-          measure: "Measure of success to be defined.",
-          obstacle: "Obstacle to be defined.",
-          overcome: "Solution to be defined.",
-          progress: 0
-        }]
+      : [buildContextualActionStepFallback(sub, domain)]
   );
 
   const getContingencyPlan = (step: ActionStep) => {
+    if (step.contingency?.trim()) {
+      return step.contingency;
+    }
+    if (step.obstacle === "The next obstacle for this focus area still needs to be identified.") {
+      return "If the obstacle has not yet been identified, review this focus area with the coach and define one likely blocker before execution.";
+    }
     if (step.obstacle && step.overcome) {
       return `If ${step.obstacle}, then ${step.overcome}`;
     }
@@ -1023,6 +1041,84 @@ export default function App() {
       setIsGeneratingActionSteps(false);
     }
   };
+
+  const prepareMissingTacticalRoadmaps = async () => {
+    if (isPreparingTacticalRoadmap) return;
+
+    const missingTargets = domains.flatMap(domain =>
+      domain.subAreas
+        .filter(sub => sub.selected !== false && (!sub.actionSteps || sub.actionSteps.length === 0))
+        .map(sub => ({ domain, sub }))
+    );
+
+    if (missingTargets.length === 0) return;
+
+    setIsPreparingTacticalRoadmap(true);
+    try {
+      const generated = await Promise.all(missingTargets.map(async ({ domain, sub }) => {
+        const target = sub.goal?.trim() || sub.name?.trim();
+        if (!target) {
+          return { domainId: domain.id, subId: sub.id, steps: [buildContextualActionStepFallback(sub, domain)] };
+        }
+
+        try {
+          const knownObstacles = [
+            ...(sub.obstacles?.map(item => item.obstacle).filter(Boolean) || []),
+            ...(sub.actionSteps?.map(step => step.obstacle).filter(Boolean) || [])
+          ];
+          const steps = await coachingService.suggestActionStepsForGoal(target, domain.name, {
+            focusAreaName: sub.name,
+            startDate: sub.startDate,
+            finishDate: sub.finishDate,
+            obstacles: knownObstacles
+          });
+
+          const normalizedSteps = steps
+            .filter(step => step.task?.trim())
+            .map(step => ({
+              task: step.task,
+              measure: step.measure || "Progress is measured by completing the first defined action for this focus area.",
+              obstacle: step.obstacle || "The next obstacle for this focus area still needs to be identified.",
+              overcome: step.overcome || "Review the obstacle and choose one practical adjustment.",
+              contingency: step.obstacle || step.overcome
+                ? "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope."
+                : "If progress stalls, reduce the scope and complete a smaller version of the action.",
+              startDate: step.startDate || sub.startDate || "",
+              endDate: step.endDate || (sub.isOngoing ? "" : (sub.finishDate || "")),
+              isOngoing: sub.isOngoing,
+              progress: 0
+            }));
+
+          return {
+            domainId: domain.id,
+            subId: sub.id,
+            steps: normalizedSteps.length > 0 ? normalizedSteps : [buildContextualActionStepFallback(sub, domain)]
+          };
+        } catch (error) {
+          console.error("Error preparing tactical roadmap for", sub.name, error);
+          return { domainId: domain.id, subId: sub.id, steps: [buildContextualActionStepFallback(sub, domain)] };
+        }
+      }));
+
+      setDomains(prev => prev.map(domain => ({
+        ...domain,
+        subAreas: domain.subAreas.map(sub => {
+          if (sub.actionSteps && sub.actionSteps.length > 0) return sub;
+          const match = generated.find(item => item.domainId === domain.id && item.subId === sub.id);
+          return match ? { ...sub, actionSteps: match.steps } : sub;
+        })
+      })));
+    } finally {
+      setIsPreparingTacticalRoadmap(false);
+    }
+  };
+
+  useEffect(() => {
+    if (step !== CoachingStep.MASTERPLAN && step !== CoachingStep.CONSOLIDATED_PLAN) return;
+    if (isPreparingTacticalRoadmap) return;
+    if (!domains.some(domain => domain.subAreas.some(sub => sub.selected !== false && (!sub.actionSteps || sub.actionSteps.length === 0)))) return;
+    prepareMissingTacticalRoadmaps();
+  }, [step, domains, isPreparingTacticalRoadmap]);
 
   const toggleSubAreaExpansion = (id: string) => {
     setExpandedSubAreas(prev => ({ ...prev, [id]: !prev[id] }));
@@ -3565,6 +3661,11 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  {isPreparingTacticalRoadmap && (
+                    <div className="bg-emerald-50 border-b border-emerald-100 px-6 py-3 text-center text-xs font-bold uppercase tracking-widest text-emerald-700">
+                      Preparing tactical roadmap...
+                    </div>
+                  )}
 
                   <div className="p-4 md:p-8 space-y-8 md:space-y-12 bg-white">
                     <div className="grid grid-cols-1 gap-8">
@@ -4114,6 +4215,11 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+                {isPreparingTacticalRoadmap && (
+                  <div className="bg-emerald-50 border-b border-emerald-100 px-6 py-3 text-center text-xs font-bold uppercase tracking-widest text-emerald-700">
+                    Preparing tactical roadmap...
+                  </div>
+                )}
 
                 <div ref={planRef} className="p-4 md:p-12 space-y-12 md:space-y-24 bg-white">
                   {/* Strategic Roadmap Waterfall diagram */}
@@ -4156,7 +4262,7 @@ export default function App() {
                                     <div className="space-y-4">
                                         <label className="text-[9px] font-bold uppercase tracking-widest text-stone-400">Tactical Roadmap</label>
                                         <div className="space-y-3">
-                                            {getPlanActionSteps(sub).map((step, idx) => (
+                                            {getPlanActionSteps(sub, domain).map((step, idx) => (
                                                 <div key={idx} className="p-4 bg-white rounded-2xl border border-stone-100 shadow-sm space-y-3">
                                                     <div className="flex items-start gap-4">
                                                         <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-bold shrink-0">{idx + 1}</div>
@@ -4201,7 +4307,7 @@ export default function App() {
                                             <label className="text-[9px] font-bold uppercase tracking-widest text-stone-400">Contingency Plan</label>
                                         </div>
                                         <div className="space-y-4">
-                                            {getPlanActionSteps(sub).map((a, idx) => (
+                                            {getPlanActionSteps(sub, domain).map((a, idx) => (
                                                 <div key={idx} className="space-y-2">
                                                     <p className="text-[10px] font-bold text-stone-500 italic">Action {idx + 1}</p>
                                                     <p className="text-xs text-stone-800 font-medium leading-relaxed">{getContingencyPlan(a)}</p>

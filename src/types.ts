@@ -19,6 +19,7 @@ export interface ActionStep {
   measure?: string;
   obstacle?: string;
   overcome?: string;
+  contingency?: string;
   progress?: number; // 0-100
   coachComments?: string[];
 }
