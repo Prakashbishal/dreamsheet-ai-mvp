@@ -24,8 +24,13 @@ interface TimelineRow {
   id: string;
   type: 'domain' | 'subarea' | 'step';
   name: string;
+  detailTitle?: string;
+  measure?: string;
+  obstacle?: string;
+  overcome?: string;
   startDate?: string;
   endDate?: string;
+  isOngoing?: boolean;
   colorHex: string;
   colorBg: string;
   colorText: string;
@@ -53,11 +58,28 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
     });
     return initial;
   });
-  const [showSteps, setShowSteps] = useState<boolean>(true);
+  const [detailExpandedRows, setDetailExpandedRows] = useState<Record<string, boolean>>({});
+  const [showSteps, setShowSteps] = useState<boolean>(false);
   const [filterDomain, setFilterDomain] = useState<string>('all');
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   const toggleRow = (id: string) => {
+    if (id.startsWith('subarea-') || id.startsWith('step-')) {
+      toggleDetails(id);
+      return;
+    }
+
+    setExpandedRows(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const toggleDetails = (id: string) => {
+    setDetailExpandedRows(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
     setExpandedRows(prev => ({
       ...prev,
       [id]: !prev[id]
@@ -66,17 +88,20 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
 
   const expandAll = () => {
     const next: Record<string, boolean> = {};
+    const detailNext: Record<string, boolean> = {};
     domains.forEach(d => {
       next[`domain-${d.id}`] = true;
       d.subAreas.forEach(s => {
-        next[`subarea-${s.id}`] = true;
+        detailNext[`subarea-${s.id}`] = true;
       });
     });
     setExpandedRows(next);
+    setDetailExpandedRows(detailNext);
   };
 
   const collapseAll = () => {
     setExpandedRows({});
+    setDetailExpandedRows({});
   };
 
   // 1. Process and Flatten Data for the Timeline rows
@@ -105,6 +130,9 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
         id: domainId,
         type: 'domain',
         name: d.name,
+        detailTitle: d.domainGoal || d.domainVision || d.vision || d.name,
+        measure: [d.currentRating !== undefined ? `Current: ${d.currentRating}/10` : null, d.futureRating !== undefined ? `Target: ${d.futureRating}/10` : null].filter(Boolean).join(' | ') || undefined,
+        overcome: d.why || d.notes,
         startDate: domainMinDateStr,
         endDate: domainMaxDateStr,
         colorHex: palette.hex,
@@ -136,8 +164,13 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
           id: subareaId,
           type: 'subarea',
           name: sub.goal || sub.name || "Focus Goal",
+          detailTitle: sub.goal || sub.name || "Focus Goal",
+          measure: sub.successIndicator || sub.actionSteps?.map(step => step.measure).filter(Boolean).join(' | '),
+          obstacle: sub.obstacles?.map(item => item.obstacle).filter(Boolean).join(' | ') || sub.actionSteps?.map(step => step.obstacle).filter(Boolean).join(' | '),
+          overcome: sub.obstacles?.map(item => item.solution).filter(Boolean).join(' | ') || sub.actionSteps?.map(step => step.overcome).filter(Boolean).join(' | '),
           startDate: subareaMinDateStr,
           endDate: subareaMaxDateStr,
+          isOngoing: sub.isOngoing,
           colorHex: palette.hex,
           colorBg: palette.bg,
           colorText: palette.text,
@@ -152,8 +185,13 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
               id: `step-${sub.id}-${stepIdx}`,
               type: 'step',
               name: step.task || "Action step",
+              detailTitle: step.task || "Action step",
+              measure: step.measure,
+              obstacle: step.obstacle,
+              overcome: step.overcome,
               startDate: step.startDate || subareaMinDateStr, // fallback to subarea dates
               endDate: step.endDate || subareaMaxDateStr,
+              isOngoing: step.isOngoing,
               colorHex: palette.hex,
               colorBg: 'bg-stone-50',
               colorText: 'text-stone-600',
@@ -255,17 +293,15 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
         }
       }
 
-      // Respect hierarchical closure (if parent row collapsed, hide child)
-      if (row.level > 0 && row.parentId) {
-        // Is immediate parent expanded?
-        if (!expandedRows[row.parentId]) return false;
+      // Respect domain-level closure. Focus-area detail expansion is separate from step visibility.
+      if (row.level === 1 && row.parentId && !expandedRows[row.parentId]) {
+        return false;
+      }
 
-        // Is grandparent expanded? (For steps level 2)
-        if (row.level === 2) {
-          const parentRow = allRows.find(r => r.id === row.parentId);
-          if (parentRow && parentRow.parentId && !expandedRows[parentRow.parentId]) {
-            return false;
-          }
+      if (row.level === 2 && row.parentId) {
+        const parentRow = allRows.find(r => r.id === row.parentId);
+        if (parentRow?.parentId && !expandedRows[parentRow.parentId]) {
+          return false;
         }
       }
 
@@ -306,8 +342,70 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
     return dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
+  const getDurationLabel = (row: TimelineRow) => {
+    if (!row.startDate || !row.endDate || row.isOngoing) return row.isOngoing ? 'Ongoing' : 'TBD';
+
+    const start = new Date(row.startDate);
+    const end = new Date(row.endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return 'TBD';
+
+    const dayCount = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1);
+    if (dayCount < 14) return `${dayCount} day${dayCount === 1 ? '' : 's'}`;
+
+    const weekCount = Math.round(dayCount / 7);
+    if (weekCount < 10) return `${weekCount} week${weekCount === 1 ? '' : 's'}`;
+
+    const monthCount = Math.round(dayCount / 30);
+    return `${monthCount} month${monthCount === 1 ? '' : 's'}`;
+  };
+
+  const hasAdditionalDetails = (row: TimelineRow) => Boolean(row.measure || row.obstacle || row.overcome || row.startDate || row.endDate || row.isOngoing);
+
+  const renderDetailRows = (row: TimelineRow) => {
+    const detailRows = [
+      { label: row.type === 'step' ? 'Task' : 'Strategic Target', value: row.detailTitle || row.name },
+      { label: 'Timeline', value: `${formatDateLabel(row.startDate)} to ${row.isOngoing ? 'Ongoing' : formatDateLabel(row.endDate)} (${getDurationLabel(row)})` },
+      { label: 'Measure', value: row.measure },
+      { label: 'Obstacle', value: row.obstacle },
+      { label: 'Overcome / Solution', value: row.overcome }
+    ].filter(item => item.value && item.value.trim());
+
+    if (!detailRows.length || !hasAdditionalDetails(row)) {
+      return <p className="text-xs text-stone-500 italic">No additional details available yet.</p>;
+    }
+
+    return (
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        {detailRows.map(item => (
+          <div key={item.label} className="space-y-1">
+            <dt className="text-[9px] font-extrabold uppercase tracking-widest text-stone-400">{item.label}</dt>
+            <dd className="text-stone-700 leading-relaxed break-words">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  };
+
+  const renderTooltip = (row: TimelineRow) => (
+    <div className="absolute left-1/2 top-full z-[999] mt-2 min-w-[260px] max-w-[340px] -translate-x-1/2 rounded-xl border border-stone-800 bg-stone-900 p-3 text-left text-[11px] leading-relaxed text-white shadow-2xl pointer-events-none">
+      <div className="mb-1 text-[9px] font-extrabold uppercase tracking-wider text-emerald-400">{row.type} Info</div>
+      <div className="mb-2 text-xs font-bold">{row.name}</div>
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1 font-mono font-medium text-stone-100">
+          <Calendar size={11} className="shrink-0 text-emerald-400" />
+          {formatDateLabel(row.startDate)} to {row.isOngoing ? 'Ongoing' : formatDateLabel(row.endDate)}
+        </div>
+        <div className="font-mono text-stone-200">Duration: {getDurationLabel(row)}</div>
+        {row.measure && <div><span className="font-bold text-emerald-300">Measure:</span> {row.measure}</div>}
+        {row.obstacle && <div><span className="font-bold text-amber-300">Obstacle:</span> {row.obstacle}</div>}
+        {row.overcome && <div><span className="font-bold text-cyan-300">Overcome:</span> {row.overcome}</div>}
+      </div>
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-8 border-transparent border-b-stone-900" />
+    </div>
+  );
+
   return (
-    <div className="bg-white rounded-3xl border border-stone-200 shadow-xl overflow-hidden mt-6 mb-12">
+    <div className="bg-white rounded-3xl border border-stone-200 shadow-xl overflow-visible mt-6 mb-12">
       {/* Roadmap Panel Header */}
       <div className="bg-stone-50 p-6 border-b border-stone-200 flex flex-col xl:flex-row xl:items-center justify-between gap-6">
         <div>
@@ -341,6 +439,8 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
           {/* Action Steps toggle control */}
           <button
             onClick={() => setShowSteps(!showSteps)}
+            aria-label={showSteps ? 'Hide action steps in roadmap' : 'Show action steps in roadmap'}
+            title={showSteps ? 'Hide action steps' : 'Show action steps'}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border shadow-sm ${
               showSteps 
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' 
@@ -417,15 +517,22 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
               const hasTimeline = row.startDate && row.endDate;
               const barPos = getBarPosition(row.startDate, row.endDate);
               const isHovered = hoveredRowId === row.id;
+              const isDetailExpanded = Boolean(detailExpandedRows[row.id]);
+              const isHierarchyExpanded = Boolean(expandedRows[row.id]);
+              const isDomainRow = row.type === 'domain';
+              const isExpandableDetailRow = row.type !== 'domain';
 
               return (
-                <div 
-                  key={row.id}
+                <React.Fragment key={row.id}>
+                <div
                   className={`flex items-stretch relative transition-all group ${
                     isHovered ? 'bg-stone-50/80' : 'hover:bg-stone-50/30'
-                  }`}
+                  } ${isExpandableDetailRow ? 'cursor-pointer' : ''}`}
                   onMouseEnter={() => setHoveredRowId(row.id)}
                   onMouseLeave={() => setHoveredRowId(null)}
+                  onClick={() => {
+                    if (isExpandableDetailRow) toggleDetails(row.id);
+                  }}
                 >
                   {/* Left Label Name and Details Component */}
                   <div 
@@ -440,6 +547,8 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
                             e.stopPropagation();
                             toggleRow(row.id);
                           }}
+                          aria-label={row.type === 'domain' ? `${expandedRows[row.id] ? 'Collapse' : 'Expand'} ${row.name} child rows` : `${expandedRows[row.id] ? 'Hide' : 'Show'} details for ${row.name}`}
+                          title={row.type === 'domain' ? `${expandedRows[row.id] ? 'Collapse' : 'Expand'} child rows` : `${expandedRows[row.id] ? 'Hide' : 'Show'} details`}
                           className="w-5 h-5 rounded hover:bg-stone-100 flex items-center justify-center text-stone-500 shrink-0 transition-all focus:outline-none"
                         >
                           {expandedRows[row.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -486,7 +595,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
                   </div>
 
                   {/* Right Track and Gantt Bar Plot Area */}
-                  <div className="flex-1 relative min-h-[58px] overflow-hidden select-none">
+                  <div className="flex-1 relative min-h-[58px] overflow-visible select-none">
                     {/* Vertical guideline column indicators printed under bar plots */}
                     <div className="absolute inset-0 pointer-events-none z-0 flex">
                       {columns.map(col => (
@@ -523,7 +632,8 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
                           </div>
 
                           {/* Hover Tooltip Overlay element */}
-                          {isHovered && (
+                          {isHovered && renderTooltip(row)}
+                          {false && isHovered && (
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-3 bg-stone-900 border border-stone-800 text-white rounded-xl shadow-2xl text-[11px] whitespace-normal z-50 text-left min-w-[240px] pointer-events-none leading-relaxed leading-[1.3] opacity-100 animate-fade-in animate-duration-150">
                               <div className="font-extrabold uppercase text-[9px] text-emerald-400 mb-1 tracking-wider">{row.type} Info</div>
                               <div className="font-bold mb-1 text-xs">{row.name}</div>
@@ -549,6 +659,17 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
 
                   </div>
                 </div>
+                {isDetailExpanded && (
+                  <div className="flex bg-stone-50/80">
+                    <div className="w-[340px] shrink-0 border-r border-stone-200 bg-stone-50/80" />
+                    <div className="flex-1 min-w-0 p-4">
+                      <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+                        {renderDetailRows(row)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                </React.Fragment>
               );
             })}
 

@@ -341,6 +341,15 @@ export default function App() {
   const [showDomainInstructions, setShowDomainInstructions] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const domainInstructionsRef = useRef<HTMLDivElement>(null);
+  const domainQuestionsRef = useRef<HTMLElement>(null);
+
+  const scrollToDomainQuestions = () => {
+    domainQuestionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const scrollToDomainQuestionsSoon = () => {
+    window.setTimeout(scrollToDomainQuestions, 250);
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -496,6 +505,7 @@ export default function App() {
       if (!POSSIBLE_DOMAINS.includes(trimmed) && !customDiscoveryDomains.includes(trimmed)) {
         setCustomDiscoveryDomains([...customDiscoveryDomains, trimmed]);
         setSelectedRoles([...selectedRoles, trimmed]);
+        scrollToDomainQuestionsSoon();
       }
       setNewCustomDomain('');
       setShowCustomDomainInput(false);
@@ -2302,10 +2312,11 @@ export default function App() {
                 <div className="w-full space-y-2 flex flex-col items-center md:items-start relative">
                   <div className="flex flex-col items-center md:items-start gap-1 w-full text-center md:text-left">
                     <span className="text-[9px] font-extrabold uppercase tracking-[0.3em] text-emerald-600">The D.R.E.A.M. Framework</span>
-                    <p className="text-stone-400 text-[10px] md:text-xs font-medium max-w-sm mx-auto md:mx-0">
+                    <p className="text-stone-400 text-[10px] md:text-xs font-medium whitespace-nowrap">
                       Five steps to take you from goal-setting to goal-achievement (hover/tap letters):
                     </p>
                   </div>
+                  
                   
                   <div className="w-full relative mt-2 pt-1 pb-1">
                     <AnimatePresence>
@@ -2416,7 +2427,7 @@ export default function App() {
                       <h2 className="text-2xl md:text-3xl font-light text-stone-900 tracking-tight font-serif italic text-center md:text-left">
                         Step D: Domains
                       </h2>
-                      <div ref={domainInstructionsRef} className="relative w-full max-w-2xl mx-auto md:mx-0">
+                      <div ref={domainInstructionsRef} className="relative w-full max-w-5xl mx-auto md:mx-0">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -2430,20 +2441,21 @@ export default function App() {
                         
                         <AnimatePresence>
                           {showDomainInstructions && (
+                            
                             <motion.div
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: "auto" }}
                               exit={{ opacity: 0, height: 0 }}
                               transition={{ duration: 0.2 }}
-                              className="overflow-hidden"
+                              className="overflow-hidden w-full"
                             >
-                              <div className="mt-4 p-5 rounded-2xl bg-stone-50 border border-stone-100 text-stone-600 text-xs md:text-sm leading-relaxed space-y-3 text-left">
+                              <div className="mt-4 p-5 rounded-2xl bg-stone-50 border border-stone-100 text-stone-600 text-xs md:text-sm leading-relaxed space-y-3 text-left w-full max-w-6xl">
                                 <p>
                                   A Domain is the area of your life and/or work where you want to see improvement (your Health, your Wealth, your Relationships, your Career or your Business, etc.).
                                 </p>
                                 <p>
                                   The Domain is the heart of your DREAMsheet – we recommend you build one DREAMsheet for each Domain.
-                                </p>
+                                </p>  
                                 <p>
                                   To start your journey, please select just one Domain from the choices below. If you can’t see one that fits your specific situation, don’t worry…you can create your own custom Domain. Or alternatively, you can take our Domain Quiz.
                                 </p>
@@ -2476,6 +2488,7 @@ export default function App() {
                                         setSelectedRoles([domain.name]);
                                         setLastSelectedDomain(domain.name);
                                         setShowDomainVisionResults(false);
+                                        scrollToDomainQuestionsSoon();
                                       }
                                     }
                                   }}
@@ -2531,6 +2544,7 @@ export default function App() {
                                         setSelectedRoles([domain]);
                                         setLastSelectedDomain(domain);
                                         setShowDomainVisionResults(false);
+                                        scrollToDomainQuestionsSoon();
                                       }
                                     }
                                   }}
@@ -2608,6 +2622,22 @@ export default function App() {
                           )}
                         </div>
 
+                        {selectedRoles.length > 0 && (
+                          <div className="mx-auto max-w-2xl rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4 shadow-sm">
+                            <div className="flex flex-col items-center justify-between gap-3 text-center sm:flex-row sm:text-left">
+                              <p className="text-sm font-medium text-emerald-900">
+                                Domain selected. Scroll down to answer the Domain Quiz questions.
+                              </p>
+                              <button
+                                onClick={scrollToDomainQuestions}
+                                className="inline-flex w-full items-center justify-center rounded-xl bg-emerald-600 px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-white shadow-lg shadow-emerald-600/10 transition-all hover:bg-emerald-700 sm:w-auto"
+                              >
+                                Go to Domain Questions ↓
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="space-y-4 pt-4 border-t border-stone-100">
                           <p className="text-stone-500 text-xs text-center font-light leading-relaxed">Not sure where to start? Try our AI-powered domain identification quiz to find your focus…</p>
                           <div className="flex justify-center">
@@ -2633,7 +2663,7 @@ export default function App() {
 
                     {/* D: Discovery Phase */}
                     {selectedRoles.length > 0 && !showDomainVisionResults && (
-                      <section className="space-y-10 border-t border-stone-100 pt-10">
+                      <section ref={domainQuestionsRef} className="scroll-mt-6 space-y-10 border-t border-stone-100 pt-10">
                         <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-4">
                           <p className="text-stone-600 text-sm max-w-2xl mx-auto md:mx-0 leading-relaxed">
                             DREAMsheet AI now invites you to drill down further into your chosen Domain so that it can refine your choice by creating 4 FOCUS AREAS. The questions below will help the AI work out the optimal Focus Areas for you.
@@ -4567,7 +4597,7 @@ export default function App() {
                   <div className="space-y-1.5 text-left">
                     <label className="text-[10px] font-extrabold uppercase tracking-widest text-[#666666] flex items-center gap-1.5 justify-start">
                       <Bot size={12} className="text-emerald-600" />
-                      Coach/Facilitator Name 
+                      Coach/Facilitator Name (where relevant) 
                     </label>
                     <input 
                       type="text"
