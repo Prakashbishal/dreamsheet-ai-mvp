@@ -428,6 +428,7 @@ export default function App() {
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
+  const [pdfStatusMessage, setPdfStatusMessage] = useState('');
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
@@ -510,10 +511,13 @@ export default function App() {
   const handleExportPDF = async () => {
     if (!planRef.current) {
       console.error("Plan reference not found");
+      setPdfStatusMessage("PDF generation failed. Opening browser print instead.");
+      window.print();
       return;
     }
     
     setLoading(true);
+    setPdfStatusMessage('');
     
     try {
       const element = planRef.current;
@@ -559,9 +563,10 @@ export default function App() {
       element.removeAttribute('data-exporting');
     } catch (error) {
       console.error("PDF Export failed:", error);
-      alert("PDF generation failed in this environment. Attempting to open print dialog as fallback...");
+      setPdfStatusMessage("PDF generation failed. Opening browser print instead.");
       window.print();
     } finally {
+      planRef.current?.removeAttribute('data-exporting');
       setLoading(false);
     }
   };
@@ -4391,8 +4396,13 @@ export default function App() {
                     disabled={loading}
                     className="bg-emerald-600 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-700 transition-all disabled:opacity-50 shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-3 w-full md:w-auto"
                   >
-                    <Download size={18} /> {loading ? "Generating Output..." : "Download Strategic PDF"}
+                    <Download size={18} /> {loading ? "Preparing PDF..." : "Download Strategic PDF"}
                   </button>
+                  {pdfStatusMessage && (
+                    <p className="w-full text-center text-xs font-medium text-amber-700">
+                      {pdfStatusMessage}
+                    </p>
+                  )}
                   <button 
                     onClick={() => setShowResetConfirm(true)}
                     className="text-stone-400 hover:text-red-500 transition-colors text-xs md:text-sm font-bold tracking-wide flex items-center gap-2 px-4 py-3 hover:bg-stone-100 rounded-xl"
