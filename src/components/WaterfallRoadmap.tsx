@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Domain, SubArea, ActionStep } from '../types';
 import { 
   Calendar, 
@@ -28,6 +28,7 @@ interface TimelineRow {
   measure?: string;
   obstacle?: string;
   overcome?: string;
+  contingency?: string;
   startDate?: string;
   endDate?: string;
   isOngoing?: boolean;
@@ -62,6 +63,25 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
   const [showSteps, setShowSteps] = useState<boolean>(false);
   const [filterDomain, setFilterDomain] = useState<string>('all');
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 24, y: 24 });
+  const hoverTimeoutRef = useRef<number | null>(null);
+
+  const setHoveredRowWithDelay = (id: string | null) => {
+    if (hoverTimeoutRef.current) {
+      window.clearTimeout(hoverTimeoutRef.current);
+    }
+
+    hoverTimeoutRef.current = window.setTimeout(() => {
+      setHoveredRowId(id);
+    }, id ? 80 : 120);
+  };
+
+  const updateTooltipPosition = (event: React.MouseEvent) => {
+    const tooltipWidth = 340;
+    const x = Math.min(event.clientX + 18, Math.max(24, window.innerWidth - tooltipWidth - 24));
+    const y = Math.min(event.clientY + 18, Math.max(24, window.innerHeight - 260));
+    setTooltipPosition({ x, y });
+  };
 
   const toggleRow = (id: string) => {
     if (id.startsWith('subarea-') || id.startsWith('step-')) {
@@ -130,9 +150,10 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
         id: domainId,
         type: 'domain',
         name: d.name,
-        detailTitle: d.domainGoal || d.domainVision || d.vision || d.name,
-        measure: [d.currentRating !== undefined ? `Current: ${d.currentRating}/10` : null, d.futureRating !== undefined ? `Target: ${d.futureRating}/10` : null].filter(Boolean).join(' | ') || undefined,
-        overcome: d.why || d.notes,
+          detailTitle: d.domainGoal || d.domainVision || d.vision || d.name,
+          measure: [d.currentRating !== undefined ? `Current: ${d.currentRating}/10` : null, d.futureRating !== undefined ? `Target: ${d.futureRating}/10` : null].filter(Boolean).join(' | ') || undefined,
+          overcome: d.why || d.notes,
+          contingency: d.why ? "If progress stalls, revisit the domain why and adjust the next focus area or timeline." : undefined,
         startDate: domainMinDateStr,
         endDate: domainMaxDateStr,
         colorHex: palette.hex,
@@ -168,6 +189,9 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
           measure: sub.successIndicator || sub.actionSteps?.map(step => step.measure).filter(Boolean).join(' | '),
           obstacle: sub.obstacles?.map(item => item.obstacle).filter(Boolean).join(' | ') || sub.actionSteps?.map(step => step.obstacle).filter(Boolean).join(' | '),
           overcome: sub.obstacles?.map(item => item.solution).filter(Boolean).join(' | ') || sub.actionSteps?.map(step => step.overcome).filter(Boolean).join(' | '),
+          contingency: sub.obstacles?.length || sub.actionSteps?.some(step => step.obstacle || step.overcome)
+            ? "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope."
+            : undefined,
           startDate: subareaMinDateStr,
           endDate: subareaMaxDateStr,
           isOngoing: sub.isOngoing,
@@ -189,6 +213,9 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
               measure: step.measure,
               obstacle: step.obstacle,
               overcome: step.overcome,
+              contingency: step.obstacle || step.overcome
+                ? "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope."
+                : undefined,
               startDate: step.startDate || subareaMinDateStr, // fallback to subarea dates
               endDate: step.endDate || subareaMaxDateStr,
               isOngoing: step.isOngoing,
@@ -359,20 +386,15 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
     return `${monthCount} month${monthCount === 1 ? '' : 's'}`;
   };
 
-  const hasAdditionalDetails = (row: TimelineRow) => Boolean(row.measure || row.obstacle || row.overcome || row.startDate || row.endDate || row.isOngoing);
-
   const renderDetailRows = (row: TimelineRow) => {
     const detailRows = [
       { label: row.type === 'step' ? 'Task' : 'Strategic Target', value: row.detailTitle || row.name },
       { label: 'Timeline', value: `${formatDateLabel(row.startDate)} to ${row.isOngoing ? 'Ongoing' : formatDateLabel(row.endDate)} (${getDurationLabel(row)})` },
-      { label: 'Measure', value: row.measure },
-      { label: 'Obstacle', value: row.obstacle },
-      { label: 'Overcome / Solution', value: row.overcome }
-    ].filter(item => item.value && item.value.trim());
-
-    if (!detailRows.length || !hasAdditionalDetails(row)) {
-      return <p className="text-xs text-stone-500 italic">No additional details available yet.</p>;
-    }
+      { label: 'Measure', value: row.measure || "Measure of success to be defined." },
+      { label: 'Obstacle', value: row.obstacle || "Obstacle to be defined." },
+      { label: 'Overcome / Solution', value: row.overcome || "Solution to be defined." },
+      { label: 'Contingency Plan', value: row.contingency || "Contingency plan to be defined." }
+    ];
 
     return (
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
@@ -387,7 +409,10 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
   };
 
   const renderTooltip = (row: TimelineRow) => (
-    <div className="absolute left-1/2 top-full z-[999] mt-2 min-w-[260px] max-w-[340px] -translate-x-1/2 rounded-xl border border-stone-800 bg-stone-900 p-3 text-left text-[11px] leading-relaxed text-white shadow-2xl pointer-events-none">
+    <div
+      className="fixed z-[9999] min-w-[260px] max-w-[340px] rounded-xl border border-stone-950 bg-stone-950 p-3 text-left text-[11px] leading-relaxed text-white shadow-2xl pointer-events-none"
+      style={{ left: tooltipPosition.x, top: tooltipPosition.y }}
+    >
       <div className="mb-1 text-[9px] font-extrabold uppercase tracking-wider text-emerald-400">{row.type} Info</div>
       <div className="mb-2 text-xs font-bold">{row.name}</div>
       <div className="space-y-1.5">
@@ -400,9 +425,10 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
         {row.obstacle && <div><span className="font-bold text-amber-300">Obstacle:</span> {row.obstacle}</div>}
         {row.overcome && <div><span className="font-bold text-cyan-300">Overcome:</span> {row.overcome}</div>}
       </div>
-      <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-8 border-transparent border-b-stone-900" />
     </div>
   );
+
+  const tooltipRow = hoveredRowId ? visibleRows.find(row => row.id === hoveredRowId) : null;
 
   return (
     <div className="bg-white rounded-3xl border border-stone-200 shadow-xl overflow-visible mt-6 mb-12">
@@ -528,8 +554,9 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
                   className={`flex items-stretch relative transition-all group ${
                     isHovered ? 'bg-stone-50/80' : 'hover:bg-stone-50/30'
                   } ${isExpandableDetailRow ? 'cursor-pointer' : ''}`}
-                  onMouseEnter={() => setHoveredRowId(row.id)}
-                  onMouseLeave={() => setHoveredRowId(null)}
+                  onMouseEnter={() => setHoveredRowWithDelay(row.id)}
+                  onMouseLeave={() => setHoveredRowWithDelay(null)}
+                  onMouseMove={updateTooltipPosition}
                   onClick={() => {
                     if (isExpandableDetailRow) toggleDetails(row.id);
                   }}
@@ -541,7 +568,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
                   >
                     <div className="flex items-center gap-2 w-full">
                       {/* Collapse Handle and Chevrons for Hierarchical folding */}
-                      {row.type !== 'step' ? (
+                      {true ? (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -632,7 +659,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
                           </div>
 
                           {/* Hover Tooltip Overlay element */}
-                          {isHovered && renderTooltip(row)}
+                          {false && isHovered && renderTooltip(row)}
                           {false && isHovered && (
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 p-3 bg-stone-900 border border-stone-800 text-white rounded-xl shadow-2xl text-[11px] whitespace-normal z-50 text-left min-w-[240px] pointer-events-none leading-relaxed leading-[1.3] opacity-100 animate-fade-in animate-duration-150">
                               <div className="font-extrabold uppercase text-[9px] text-emerald-400 mb-1 tracking-wider">{row.type} Info</div>
@@ -695,6 +722,7 @@ export const WaterfallRoadmap: React.FC<WaterfallRoadmapProps> = ({ domains, cli
           Hover elements to inspect detailed durations
         </div>
       </div>
+      {tooltipRow && renderTooltip(tooltipRow)}
     </div>
   );
 };

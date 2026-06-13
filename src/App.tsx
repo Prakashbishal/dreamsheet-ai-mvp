@@ -38,7 +38,7 @@ import {
   Zap,
   Printer
 } from 'lucide-react';
-import { CoachingStep, Domain, SubArea, CoachingPlan } from './types';
+import { CoachingStep, Domain, SubArea, CoachingPlan, ActionStep } from './types';
 import { coachingService, hasGeminiApiKey } from './services/coachingService';
 import { cn } from './lib/utils';
 import { WaterfallRoadmap } from './components/WaterfallRoadmap';
@@ -429,6 +429,33 @@ export default function App() {
   const [emailAddress, setEmailAddress] = useState('');
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
+
+  const getPlanActionSteps = (sub: SubArea) => (
+    sub.actionSteps && sub.actionSteps.length > 0
+      ? sub.actionSteps
+      : [{
+          task: "Manual Action Step",
+          startDate: "",
+          endDate: "",
+          measure: "Measure of success to be defined.",
+          obstacle: "Obstacle to be defined.",
+          overcome: "Solution to be defined.",
+          progress: 0
+        }]
+  );
+
+  const getContingencyPlan = (step: ActionStep) => {
+    if (step.obstacle && step.overcome) {
+      return `If ${step.obstacle}, then ${step.overcome}`;
+    }
+    if (step.obstacle) {
+      return `If ${step.obstacle}, use the listed overcome strategy and adjust the timeline or task scope.`;
+    }
+    if (step.overcome) {
+      return `If this obstacle appears, then ${step.overcome}`;
+    }
+    return "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope.";
+  };
 
   const handleSendEmail = () => {
     if (!emailAddress.trim()) return;
@@ -4129,13 +4156,13 @@ export default function App() {
                                     <div className="space-y-4">
                                         <label className="text-[9px] font-bold uppercase tracking-widest text-stone-400">Tactical Roadmap</label>
                                         <div className="space-y-3">
-                                            {sub.actionSteps?.map((step, idx) => (
+                                            {getPlanActionSteps(sub).map((step, idx) => (
                                                 <div key={idx} className="p-4 bg-white rounded-2xl border border-stone-100 shadow-sm space-y-3">
                                                     <div className="flex items-start gap-4">
                                                         <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-[10px] font-bold shrink-0">{idx + 1}</div>
                                                         <div>
                                                           <label className="text-[8px] font-bold uppercase tracking-widest text-stone-400">Task</label>
-                                                          <p className="text-sm font-bold text-stone-900 leading-relaxed">{step.task}</p>
+                                                          <p className="text-sm font-bold text-stone-900 leading-relaxed">{step.task || "Manual Action Step"}</p>
                                                         </div>
                                                     </div>
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pl-0 sm:pl-10">
@@ -4174,10 +4201,10 @@ export default function App() {
                                             <label className="text-[9px] font-bold uppercase tracking-widest text-stone-400">Contingency Plan</label>
                                         </div>
                                         <div className="space-y-4">
-                                            {sub.actionSteps?.filter(a => a.obstacle).map((a, idx) => (
+                                            {getPlanActionSteps(sub).map((a, idx) => (
                                                 <div key={idx} className="space-y-2">
-                                                    <p className="text-[10px] font-bold text-stone-500 italic">"If {a.obstacle}..."</p>
-                                                    <p className="text-xs text-stone-800 font-medium leading-relaxed">"...then {a.overcome}"</p>
+                                                    <p className="text-[10px] font-bold text-stone-500 italic">Action {idx + 1}</p>
+                                                    <p className="text-xs text-stone-800 font-medium leading-relaxed">{getContingencyPlan(a)}</p>
                                                 </div>
                                             ))}
                                         </div>
