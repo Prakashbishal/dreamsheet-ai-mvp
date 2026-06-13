@@ -53,4 +53,39 @@
   [data-exporting="true"] .no-export {
     display: none !important;
   }
+
+  [data-exporting="true"] .no-print,
+  [data-exporting="true"] button,
+  [data-exporting="true"] [role="tooltip"],
+  [data-exporting="true"] .group-hover\:block {
+    display: none !important;
+  }
+
+  [data-exporting="true"] {
+    background: #ffffff !important;
+    color-adjust: exact;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @media print {
+    .no-print,
+    .no-export,
+    button,
+    [role="tooltip"] {
+      display: none !important;
+    }
+
+    textarea {
+      display: none !important;
+    }
+
+    .export-only {
+      display: block !important;
+    }
+
+    body {
+      background: #ffffff !important;
+    }
+  }
 }

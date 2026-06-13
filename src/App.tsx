@@ -425,10 +425,12 @@ export default function App() {
   const [newFocusAreaName, setNewFocusAreaName] = useState('');
   const [activeExplanation, setActiveExplanation] = useState<string | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
+  const strategicPlanRef = useRef<HTMLDivElement>(null);
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [pdfStatusMessage, setPdfStatusMessage] = useState('');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
@@ -509,53 +511,99 @@ export default function App() {
   };
 
   const handleExportPDF = async () => {
-    if (!planRef.current) {
-      console.error("Plan reference not found");
-      setPdfStatusMessage("PDF generation failed. Opening browser print instead.");
-      window.print();
+    if (!strategicPlanRef.current) {
+      console.error("Strategic plan reference not found");
+      setPdfStatusMessage("PDF generation failed. Please use browser print as fallback.");
       return;
     }
     
-    setLoading(true);
+    setLoading(false);
+    setIsArchitecting(false);
+    setIsGeneratingGoal(false);
+    setIsGeneratingVision(false);
+    setIsGeneratingWhy(false);
+    setIsGeneratingAffirmations(false);
+    setIsGeneratingGoalAffirmations(false);
+    setIsGeneratingSupportingGoals(false);
+    setIsGeneratingActionSteps(false);
+    setIsGeneratingObstacles(false);
+    setIsGeneratingObstacleSolution(false);
+    setIsGeneratingDiscoveryObstacles(false);
+    setIsGeneratingDomainVision(false);
+    setIsGeneratingAlternatives(false);
+    setIsAnalyzingQuiz(false);
+    setIsPreparingTacticalRoadmap(false);
+    setIsExportingPdf(true);
     setPdfStatusMessage('');
     
     try {
-      const element = planRef.current;
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      const element = strategicPlanRef.current;
+      if (!element) {
+        throw new Error("Strategic plan reference was unavailable during export.");
+      }
+
       element.setAttribute('data-exporting', 'true');
       
       const canvas = await html2canvas(element, {
-        scale: 2, // Higher quality
+        scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
         ignoreElements: (el) => el.classList.contains('no-print') || el.classList.contains('no-export')
       });
-      
-      const imgData = canvas.toDataURL('image/png');
+
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4'
       });
-      
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      // If the plan is longer than one page, we can potentially split it or just scale it.
-      // For now, let's scale it to fit width and allow multiple pages if needed.
-      let heightLeft = pdfHeight;
-      let position = 0;
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 10;
+      const printableWidth = pageWidth - margin * 2;
+      const printableHeight = pageHeight - margin * 2;
+      const pageCanvasHeight = Math.floor((printableHeight * canvas.width) / printableWidth);
+      const pageCanvas = document.createElement('canvas');
+      const pageContext = pageCanvas.getContext('2d');
 
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
+      if (!pageContext) {
+        throw new Error("Could not create PDF page canvas.");
+      }
 
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
+      pageCanvas.width = canvas.width;
+      let renderedHeight = 0;
+      let pageIndex = 0;
+
+      while (renderedHeight < canvas.height) {
+        const sliceHeight = Math.min(pageCanvasHeight, canvas.height - renderedHeight);
+        pageCanvas.height = sliceHeight;
+        pageContext.clearRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pageContext.drawImage(
+          canvas,
+          0,
+          renderedHeight,
+          canvas.width,
+          sliceHeight,
+          0,
+          0,
+          pageCanvas.width,
+          sliceHeight
+        );
+
+        if (pageIndex > 0) {
+          pdf.addPage();
+        }
+
+        const pageImage = pageCanvas.toDataURL('image/png');
+        const imageHeight = (sliceHeight * printableWidth) / canvas.width;
+        pdf.addImage(pageImage, 'PNG', margin, margin, printableWidth, imageHeight);
+
+        renderedHeight += sliceHeight;
+        pageIndex += 1;
       }
 
       const fileName = `DREAMSheet_Plan_${(clientName || 'User').replace(/\s+/g, '_')}.pdf`;
@@ -563,11 +611,10 @@ export default function App() {
       element.removeAttribute('data-exporting');
     } catch (error) {
       console.error("PDF Export failed:", error);
-      setPdfStatusMessage("PDF generation failed. Opening browser print instead.");
-      window.print();
+      setPdfStatusMessage("PDF generation failed. Please use browser print as fallback.");
     } finally {
-      planRef.current?.removeAttribute('data-exporting');
-      setLoading(false);
+      strategicPlanRef.current?.removeAttribute('data-exporting');
+      setIsExportingPdf(false);
     }
   };
 
@@ -4254,7 +4301,11 @@ export default function App() {
                   </div>
                 )}
 
-                <div ref={planRef} className="p-4 md:p-12 space-y-12 md:space-y-24 bg-white">
+                <div
+                  ref={strategicPlanRef}
+                  data-exporting={isExportingPdf ? "true" : undefined}
+                  className="strategic-plan-export p-4 md:p-12 space-y-12 md:space-y-24 bg-white"
+                >
                   {/* Strategic Roadmap Waterfall diagram */}
                   <div className="no-export-ignore">
                     <WaterfallRoadmap domains={currentSessionDomains} clientName={clientName} />
@@ -4393,10 +4444,10 @@ export default function App() {
                   </button>
                   <button 
                     onClick={handleExportPDF}
-                    disabled={loading}
+                    disabled={isExportingPdf}
                     className="bg-emerald-600 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-700 transition-all disabled:opacity-50 shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-3 w-full md:w-auto"
                   >
-                    <Download size={18} /> {loading ? "Preparing PDF..." : "Download Strategic PDF"}
+                    <Download size={18} /> {isExportingPdf ? "Preparing PDF..." : "Download Strategic PDF"}
                   </button>
                   {pdfStatusMessage && (
                     <p className="w-full text-center text-xs font-medium text-amber-700">
@@ -4663,7 +4714,7 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-white/80 backdrop-blur-md z-[3000] flex items-center justify-center p-6"
+            className="no-print fixed inset-0 bg-white/80 backdrop-blur-md z-[3000] flex items-center justify-center p-6"
           >
             <ThinkingRobot message="AI is working for you" />
           </motion.div>
