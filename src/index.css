@@ -35,22 +35,31 @@
     scrollbar-width: none;
   }
 
-  /* Force expansion during PDF export */
-  [data-exporting="true"] .overflow-hidden {
-    height: auto !important;
-    opacity: 1 !important;
-    overflow: visible !important;
-  }
+  @media print {
+    .no-print,
+    .no-export,
+    [role="tooltip"],
+    [data-tooltip],
+    .tooltip {
+      display: none !important;
+    }
 
-  [data-exporting="true"] textarea {
-    display: none !important;
-  }
+    .export-only {
+      display: block !important;
+    }
 
-  [data-exporting="true"] .export-only {
-    display: block !important;
-  }
+    textarea {
+      display: none !important;
+    }
 
-  [data-exporting="true"] .no-export {
-    display: none !important;
+    .overflow-hidden {
+      height: auto !important;
+      opacity: 1 !important;
+      overflow: visible !important;
+    }
+
+    body {
+      background: white !important;
+    }
   }
 }

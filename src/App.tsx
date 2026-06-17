@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { 
   ChevronRight, 
   ChevronLeft, 
@@ -428,7 +426,6 @@ export default function App() {
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
-  const [pdfStatusMessage, setPdfStatusMessage] = useState('');
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
@@ -514,67 +511,8 @@ export default function App() {
     setShowEmailModal(false);
   };
 
-  const handleExportPDF = async () => {
-    if (!planRef.current) {
-      console.error("Plan reference not found");
-      setPdfStatusMessage("PDF generation failed. Opening browser print instead.");
-      window.print();
-      return;
-    }
-    
-    setLoading(true);
-    setPdfStatusMessage('');
-    
-    try {
-      const element = planRef.current;
-      element.setAttribute('data-exporting', 'true');
-      
-      const canvas = await html2canvas(element, {
-        scale: 2, // Higher quality
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        windowWidth: element.scrollWidth,
-        ignoreElements: (el) => el.classList.contains('no-print') || el.classList.contains('no-export')
-      });
-      
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-      
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-      
-      // If the plan is longer than one page, we can potentially split it or just scale it.
-      // For now, let's scale it to fit width and allow multiple pages if needed.
-      let heightLeft = pdfHeight;
-      let position = 0;
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - pdfHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
-      }
-
-      const fileName = `DREAMSheet_Plan_${(clientName || 'User').replace(/\s+/g, '_')}.pdf`;
-      pdf.save(fileName);
-      element.removeAttribute('data-exporting');
-    } catch (error) {
-      console.error("PDF Export failed:", error);
-      setPdfStatusMessage("PDF generation failed. Opening browser print instead.");
-      window.print();
-    } finally {
-      planRef.current?.removeAttribute('data-exporting');
-      setLoading(false);
-    }
+  const handleExportPDF = () => {
+    window.print();
   };
 
   const handleAddCustomDomain = () => {
@@ -4404,16 +4342,10 @@ export default function App() {
                   </button>
                   <button 
                     onClick={handleExportPDF}
-                    disabled={loading}
-                    className="bg-emerald-600 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-700 transition-all disabled:opacity-50 shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-3 w-full md:w-auto"
+                    className="bg-emerald-600 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-3 w-full md:w-auto"
                   >
-                    <Download size={18} /> {loading ? "Preparing PDF..." : "Download Strategic PDF"}
+                    <Download size={18} /> Download Strategic PDF
                   </button>
-                  {pdfStatusMessage && (
-                    <p className="w-full text-center text-xs font-medium text-amber-700">
-                      {pdfStatusMessage}
-                    </p>
-                  )}
                   <button 
                     onClick={() => setShowResetConfirm(true)}
                     className="text-stone-400 hover:text-red-500 transition-colors text-xs md:text-sm font-bold tracking-wide flex items-center gap-2 px-4 py-3 hover:bg-stone-100 rounded-xl"
