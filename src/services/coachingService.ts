@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, ThinkingLevel, type GenerateContentConfig, type GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Type, type GenerateContentConfig, type GenerateContentResponse } from "@google/genai";
 
 const geminiApiKey = process.env.GEMINI_API_KEY || '';
 export const hasGeminiApiKey = Boolean(geminiApiKey);
@@ -61,17 +61,25 @@ const isRetryableModelError = (status: string, message: string) =>
   isUnsupportedThinkingError(status, message) ||
   /unavailable|high demand|model not found|not found/i.test(message);
 
-const supportsThinkingConfig = (model: string) => model === "gemini-2.5-flash";
+const removeThinkingFields = (config: Record<string, unknown>) => {
+  delete config.thinkingConfig;
+  delete config.thinkingBudget;
+  delete config.thinkingLevel;
+};
 
-const sanitizeConfigForModel = (model: string, config?: GenerateContentConfig) => {
+const sanitizeConfig = (config?: GenerateContentConfig) => {
   if (!config) return undefined;
 
   const sanitizedConfig = { ...config };
-  if (!supportsThinkingConfig(model)) {
-    const configRecord = sanitizedConfig as Record<string, unknown>;
-    delete configRecord.thinkingConfig;
-    delete configRecord.thinkingBudget;
-    delete configRecord.thinkingLevel;
+  const configRecord = sanitizedConfig as Record<string, unknown>;
+  removeThinkingFields(configRecord);
+
+  if (configRecord.generationConfig && typeof configRecord.generationConfig === "object") {
+    const generationConfig = {
+      ...(configRecord.generationConfig as Record<string, unknown>)
+    };
+    removeThinkingFields(generationConfig);
+    configRecord.generationConfig = generationConfig;
   }
 
   return sanitizedConfig;
@@ -88,7 +96,7 @@ const generateWithFallback = async (
       return await ai.models.generateContent({
         model,
         contents,
-        config: sanitizeConfigForModel(model, config)
+        config: sanitizeConfig(config)
       });
     } catch (error) {
       const { status, message } = getGeminiErrorDetails(error);
@@ -183,7 +191,6 @@ export const coachingService = {
 
     const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
@@ -217,7 +224,6 @@ Return the result as a JSON array of strings, where each string is in the format
 
     const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
@@ -272,7 +278,6 @@ Return the result as a JSON array of strings, where each string is in the format
 
     const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -313,7 +318,6 @@ Return the result as a JSON array of strings, where each string is in the format
 
     const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.OBJECT,
           properties: {
@@ -410,9 +414,7 @@ Return the result as a JSON object.`;
     
     Return as a simple string.`;
 
-    const response = await generateWithFallback(prompt, {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
-    });
+    const response = await generateWithFallback(prompt);
     return response.text.trim().replace(/^"|"$/g, '');
   },
 
@@ -425,9 +427,7 @@ Return the result as a JSON object.`;
     
     Return as a simple string.`;
 
-    const response = await generateWithFallback(prompt, {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
-    });
+    const response = await generateWithFallback(prompt);
     return response.text.trim().replace(/^"|"$/g, '');
   },
 
