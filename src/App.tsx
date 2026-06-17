@@ -2093,22 +2093,16 @@ export default function App() {
               <div className="flex items-center gap-3 min-w-0">
                 {logoFailed ? (
                   <div className="flex flex-col text-left min-w-0">
-                    <span className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white leading-tight truncate">DREAMsheet AI</span>
+                    <span className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white leading-tight truncate">DreamSheet AI</span>
                     <span className="hidden md:block text-[#888888] italic text-[11px] font-light truncate">"The best way to predict the future is to make it up"</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src="/flourish-logo.svg"
-                      alt=""
-                      onError={() => setLogoFailed(true)}
-                      className="h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 object-contain shrink-0"
-                    />
-                    <div className="flex flex-col text-left min-w-0">
-                      <span className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white leading-tight truncate">DREAMsheet AI</span>
-                      <span className="hidden md:block text-[#888888] italic text-[11px] font-light truncate">"The best way to predict the future is to make it up"</span>
-                    </div>
-                  </div>
+                  <img
+                    src="/flourish-logo.png"
+                    alt="DreamSheet AI"
+                    onError={() => setLogoFailed(true)}
+                    className="h-12 sm:h-14 md:h-16 w-auto max-w-[210px] sm:max-w-[280px] md:max-w-[360px] object-contain shrink-0"
+                  />
                 )}
               </div>
 
