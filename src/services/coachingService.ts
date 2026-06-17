@@ -36,14 +36,14 @@ const requireGeminiApiKey = () => {
 
 const getGeminiErrorDetails = (error: unknown) => {
   const details = error as GeminiErrorDetails;
-  const status = String(
-    details?.status ??
-    details?.code ??
-    details?.error?.status ??
-    details?.error?.code ??
-    details?.statusText ??
-    "unknown"
-  );
+  const statusParts = [
+    details?.code,
+    details?.status,
+    details?.error?.code,
+    details?.error?.status,
+    details?.statusText
+  ].filter((value): value is number | string => value !== undefined);
+  const status = statusParts.length > 0 ? statusParts.map(String).join(" ") : "unknown";
   const message = String(details?.message ?? details?.error?.message ?? "");
 
   return { status, message };
@@ -52,10 +52,31 @@ const getGeminiErrorDetails = (error: unknown) => {
 const isQuotaError = (status: string, message: string) =>
   status.includes("429") || /quota|rate limit/i.test(message);
 
+const isUnsupportedThinkingError = (status: string, message: string) =>
+  (status.includes("400") || /invalid_argument/i.test(status)) &&
+  /thinking.+not supported|not supported.+thinking/i.test(message);
+
 const isRetryableModelError = (status: string, message: string) =>
   status.includes("503") ||
   status.includes("404") ||
+  isUnsupportedThinkingError(status, message) ||
   /unavailable|high demand|model not found|not found/i.test(message);
+
+const supportsThinkingConfig = (model: string) => model === "gemini-2.5-flash";
+
+const sanitizeConfigForModel = (model: string, config?: GenerateContentConfig) => {
+  if (!config) return undefined;
+
+  const sanitizedConfig = { ...config };
+  if (!supportsThinkingConfig(model)) {
+    const configRecord = sanitizedConfig as Record<string, unknown>;
+    delete configRecord.thinkingConfig;
+    delete configRecord.thinkingBudget;
+    delete configRecord.thinkingLevel;
+  }
+
+  return sanitizedConfig;
+};
 
 const generateWithFallback = async (
   contents: string,
@@ -65,7 +86,11 @@ const generateWithFallback = async (
 
   for (const model of GEMINI_MODELS) {
     try {
-      return await ai.models.generateContent({ model, contents, config });
+      return await ai.models.generateContent({
+        model,
+        contents,
+        config: sanitizeConfigForModel(model, config)
+      });
     } catch (error) {
       const { status, message } = getGeminiErrorDetails(error);
       console.warn("Gemini generateContent failed", { model, status });
@@ -387,7 +412,7 @@ Return the result as a JSON object.`;
     Return as a simple string.`;
 
     const response = await generateWithFallback(prompt, {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     });
     return response.text.trim().replace(/^"|"$/g, '');
   },
@@ -402,7 +427,7 @@ Return the result as a JSON object.`;
     Return as a simple string.`;
 
     const response = await generateWithFallback(prompt, {
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } 
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
     });
     return response.text.trim().replace(/^"|"$/g, '');
   },
