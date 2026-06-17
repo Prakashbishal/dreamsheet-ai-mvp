@@ -9,7 +9,7 @@ if (!hasGeminiApiKey) {
 }
 
 const ai = new GoogleGenAI({ apiKey: geminiApiKey });
-const model = "gemini-3-flash-lite";
+const model = "gemini-3-flash-preview";
 const AI_FALLBACK_MESSAGE = "AI suggestion could not be generated. Please try again or edit manually.";
 
 const requireGeminiApiKey = () => {
