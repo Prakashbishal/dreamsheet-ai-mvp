@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel, type GenerateContentConfig, type GenerateContentResponse } from "@google/genai";
 
 const geminiApiKey = process.env.GEMINI_API_KEY || '';
 export const hasGeminiApiKey = Boolean(geminiApiKey);
@@ -16,10 +16,74 @@ const GEMINI_MODELS = [
 ];
 const AI_FALLBACK_MESSAGE = "AI suggestion could not be generated. Please try again or edit manually.";
 
+type GeminiErrorDetails = {
+  code?: number | string;
+  status?: number | string;
+  statusText?: string;
+  message?: string;
+  error?: {
+    code?: number | string;
+    status?: number | string;
+    message?: string;
+  };
+};
+
 const requireGeminiApiKey = () => {
   if (!hasGeminiApiKey) {
     throw new Error("GEMINI_API_KEY is missing. AI suggestions will be unavailable.");
   }
+};
+
+const getGeminiErrorDetails = (error: unknown) => {
+  const details = error as GeminiErrorDetails;
+  const status = String(
+    details?.status ??
+    details?.code ??
+    details?.error?.status ??
+    details?.error?.code ??
+    details?.statusText ??
+    "unknown"
+  );
+  const message = String(details?.message ?? details?.error?.message ?? "");
+
+  return { status, message };
+};
+
+const isQuotaError = (status: string, message: string) =>
+  status.includes("429") || /quota|rate limit/i.test(message);
+
+const isRetryableModelError = (status: string, message: string) =>
+  status.includes("503") ||
+  status.includes("404") ||
+  /unavailable|high demand|model not found|not found/i.test(message);
+
+const generateWithFallback = async (
+  contents: string,
+  config?: GenerateContentConfig
+): Promise<GenerateContentResponse> => {
+  let lastError: unknown;
+
+  for (const model of GEMINI_MODELS) {
+    try {
+      return await ai.models.generateContent({ model, contents, config });
+    } catch (error) {
+      const { status, message } = getGeminiErrorDetails(error);
+      console.warn("Gemini generateContent failed", { model, status });
+
+      if (isQuotaError(status, message)) {
+        throw new Error("Gemini quota exceeded. Please wait before trying again or check your Gemini API quota.");
+      }
+
+      lastError = error;
+      if (isRetryableModelError(status, message)) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error(AI_FALLBACK_MESSAGE, { cause: lastError });
 };
 
 const parseJson = <T>(text: string | undefined, fallback: T): T => {
@@ -56,10 +120,7 @@ export const coachingService = {
     
     Return as a JSON array of objects with "name" and "description" keys.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -72,7 +133,6 @@ export const coachingService = {
             required: ["name", "description"]
           }
         }
-      }
     });
 
     const fallback = [
@@ -97,17 +157,13 @@ export const coachingService = {
 
     Return as a simple list of names.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
         }
-      }
     });
     return sanitizeStringList(parseJson(response.text, []), ["Clarity", "Consistency", "Confidence", "Progress"]);
   },
@@ -135,17 +191,13 @@ ${responses.slice(0, 3).map(r => `Q: ${r.question}\nA: ${r.answer}`).join('\n\n'
 
 Return the result as a JSON array of strings, where each string is in the format "Parent > Child".`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
         }
-      }
     });
     return sanitizeStringList(parseJson(response.text, []), [`${parentDomain} > General`, `${parentDomain} > Growth`]);
   },
@@ -162,10 +214,7 @@ Return the result as a JSON array of strings, where each string is in the format
     
     Return as a JSON object with "vision" and "why" keys.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -175,7 +224,6 @@ Return the result as a JSON array of strings, where each string is in the format
           },
           required: ["vision", "why"]
         }
-      }
     });
     return parseJson(response.text, { vision: "", why: "" });
   },
@@ -198,10 +246,7 @@ Return the result as a JSON array of strings, where each string is in the format
     
     Return the result as a JSON object with a single key "why".`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
@@ -211,7 +256,6 @@ Return the result as a JSON array of strings, where each string is in the format
           },
           required: ["why"]
         }
-      }
     });
     
     try {
@@ -243,10 +287,7 @@ Return the result as a JSON array of strings, where each string is in the format
     
     Return as a JSON object.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
@@ -261,7 +302,6 @@ Return the result as a JSON array of strings, where each string is in the format
           },
           required: ["vision", "why", "subAreas"]
         }
-      }
     });
     const fallback = {
       vision: "",
@@ -297,10 +337,7 @@ Rules for Refinement:
 
 Return the result as a JSON object.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -323,7 +360,6 @@ Return the result as a JSON object.`;
           },
           required: ["actionSteps"]
         }
-      }
     });
     try {
       return JSON.parse(response.text);
@@ -350,12 +386,8 @@ Return the result as a JSON object.`;
     
     Return as a simple string.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: { 
+    const response = await generateWithFallback(prompt, {
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } 
-      }
     });
     return response.text.trim().replace(/^"|"$/g, '');
   },
@@ -369,12 +401,8 @@ Return the result as a JSON object.`;
     
     Return as a simple string.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: { 
+    const response = await generateWithFallback(prompt, {
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } 
-      }
     });
     return response.text.trim().replace(/^"|"$/g, '');
   },
@@ -388,16 +416,12 @@ Return the result as a JSON object.`;
     
     Return as a JSON array of strings in the same order.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
         }
-      }
     });
     try {
       return JSON.parse(response.text);
@@ -414,16 +438,12 @@ Return the result as a JSON object.`;
     
     Return as a JSON array of strings.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
         }
-      }
     });
     try {
       return JSON.parse(response.text);
@@ -443,10 +463,7 @@ Return the result as a JSON object.`;
     
     Return as a JSON object with "goal" (string) and "recommendedDurationDays" (number) keys.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -456,7 +473,6 @@ Return the result as a JSON object.`;
           },
           required: ["goal", "recommendedDurationDays"]
         }
-      }
     });
     return JSON.parse(response.text);
   },
@@ -482,10 +498,7 @@ Return the result as a JSON object.`;
     
     Return a JSON array of objects.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -502,7 +515,6 @@ Return the result as a JSON object.`;
                 required: ["task", "measure", "obstacle", "overcome", "startDate", "endDate"]
           }
         }
-      }
     });
     return JSON.parse(response.text);
   },
@@ -514,16 +526,12 @@ Return the result as a JSON object.`;
     
     Return as a JSON array of 2 strings. Each obstacle should be 6-10 words.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
           items: { type: Type.STRING }
         }
-      }
     });
     try {
       return JSON.parse(response.text);
@@ -540,10 +548,7 @@ Return the result as a JSON object.`;
     
     Return as a simple string.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-    });
+    const response = await generateWithFallback(prompt);
     return response.text.trim().replace(/^"|"$/g, '');
   },
 
@@ -556,10 +561,7 @@ Return the result as a JSON object.`;
     
     Return as a JSON array of objects with "name" and "obstacles" (array of {obstacle, solution}) keys.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -582,7 +584,6 @@ Return the result as a JSON object.`;
             required: ["name", "obstacles"]
           }
         }
-      }
     });
     try {
       return JSON.parse(response.text);
@@ -676,10 +677,7 @@ In addition to these, please provide:
 
 Return the result as a JSON object.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -764,7 +762,6 @@ Return the result as a JSON object.`;
           },
           required: ["suggestedGoals", "suggestedAffirmations", "suggestedActionClusters", "suggestedMeasureClusters", "suggestedObstacleClusters", "suggestedOvercomeClusters", "goal", "affirmation", "actionSteps", "milestones", "successIndicator", "obstacles"]
         }
-      }
     });
     try {
       return JSON.parse(response.text);
@@ -807,10 +804,7 @@ Return the result as a JSON object.`;
 
     Return the result as a JSON object.`;
 
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-      config: {
+    const response = await generateWithFallback(prompt, {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -848,7 +842,6 @@ Return the result as a JSON object.`;
           },
           required: ["subDomains", "affirmations"]
         }
-      }
     });
 
     try {
