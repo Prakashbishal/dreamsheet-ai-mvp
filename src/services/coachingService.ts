@@ -12,7 +12,6 @@ const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 const GEMINI_MODELS = [
   "gemini-2.5-flash-lite",
   "gemini-2.5-flash",
-  "gemini-1.5-flash",
 ];
 const AI_FALLBACK_MESSAGE = "AI suggestion could not be generated. Please try again or edit manually.";
 
