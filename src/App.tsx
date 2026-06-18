@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { saveDreamSheetSubmission } from "./services/submissionService";
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronRight, 
@@ -426,6 +427,8 @@ export default function App() {
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
+  const [isSavingSubmission, setIsSavingSubmission] = useState(false);
+  const [submissionSaveMessage, setSubmissionSaveMessage] = useState('');
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
@@ -513,6 +516,51 @@ export default function App() {
 
   const handleExportPDF = () => {
     window.print();
+  };
+
+  const handleSaveDreamSheet = async () => {
+    setIsSavingSubmission(true);
+    setSubmissionSaveMessage('');
+
+    const finalDomains = currentSessionDomains;
+    const focusAreas = finalDomains.map(domain => ({
+      domain_id: domain.id,
+      domain_name: domain.name,
+      focus_areas: domain.subAreas
+    }));
+
+    try {
+      await saveDreamSheetSubmission({
+        client_name: clientName,
+        coach_name: coachName,
+        domains: finalDomains.map(domain => domain.name),
+        focus_areas: focusAreas,
+        plan_data: {
+          clientName,
+          coachName,
+          planNotes,
+          planCreatedAt,
+          timeHorizon,
+          selectedRoles,
+          lastSelectedDomain,
+          discoveryResponses,
+          quizResponses,
+          quizPhase,
+          completedDomainIds,
+          activeDomainId,
+          customDiscoveryDomains,
+          suggestedDomains,
+          domains,
+          finalDomains
+        }
+      });
+      setSubmissionSaveMessage('DREAMsheet saved successfully.');
+    } catch (error) {
+      console.error("Could not save DREAMsheet submission:", error);
+      setSubmissionSaveMessage('Could not save DREAMsheet. Please use Print/PDF for now.');
+    } finally {
+      setIsSavingSubmission(false);
+    }
   };
 
   const handleAddCustomDomain = () => {
@@ -4341,6 +4389,13 @@ export default function App() {
                     <Mail size={18} /> Email My Full Plan
                   </button>
                   <button 
+                    onClick={handleSaveDreamSheet}
+                    disabled={isSavingSubmission}
+                    className="bg-white border border-emerald-200 text-emerald-700 px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-50 transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/10 w-full md:w-auto disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isSavingSubmission ? 'Saving...' : 'Save DREAMsheet'}
+                  </button>
+                  <button 
                     onClick={handleExportPDF}
                     className="bg-emerald-600 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-3 w-full md:w-auto"
                   >
@@ -4352,6 +4407,11 @@ export default function App() {
                   >
                     <RotateCcw size={14} /> Reset Journey
                   </button>
+                  {submissionSaveMessage && (
+                    <p className="w-full text-center text-xs md:text-sm font-semibold text-stone-600" aria-live="polite">
+                      {submissionSaveMessage}
+                    </p>
+                  )}
                 </div>
               </motion.div>
             )}
