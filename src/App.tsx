@@ -2098,10 +2098,10 @@ export default function App() {
   return (
     <div className={cn(
       "flex flex-col bg-[#FDFCFB] text-[#2D2D2D] font-sans selection:bg-emerald-100",
-      "min-h-screen overflow-y-auto"
+      "min-h-screen"
     )} ref={appShellRef}>
       {/* Header */}
-      <header className="bg-black text-white shrink-0 sticky top-0 z-[2000] border-b border-white/5">
+      <header className="bg-black text-white shrink-0 sticky top-0 z-[9999] border-b border-white/5">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
