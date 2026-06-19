@@ -339,8 +339,14 @@ export default function App() {
   const [showStepList, setShowStepList] = useState(() => getInitialState('showStepList', false));
   const [showDomainInstructions, setShowDomainInstructions] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
+  const appShellRef = useRef<HTMLDivElement>(null);
   const domainInstructionsRef = useRef<HTMLDivElement>(null);
   const domainQuestionsRef = useRef<HTMLElement>(null);
+
+  const scrollViewportToTop = (behavior: ScrollBehavior = 'smooth') => {
+    window.scrollTo({ top: 0, behavior });
+    appShellRef.current?.scrollTo({ top: 0, behavior });
+  };
 
   const scrollToDomainQuestions = () => {
     domainQuestionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -634,13 +640,13 @@ export default function App() {
     setIsGeneratingObstacleSolution(false);
     setIsGeneratingDiscoveryObstacles(false);
     setIsGeneratingDomainVision(false);
+    setAiFeedback(null);
 
     setStep(newStep);
     
-    // Tiny delay to ensure layout has settled before any automated scroll logic
+    // Tiny delay to ensure layout has settled before any automated scroll logic.
     setTimeout(() => {
-      const scrollable = document.querySelector('.overflow-y-auto');
-      if (scrollable) scrollable.scrollTo({ top: 0, behavior: 'smooth' });
+      scrollViewportToTop('smooth');
     }, 100);
   };
 
@@ -867,34 +873,53 @@ export default function App() {
     if (!domain || domain.subAreas.length === 0) return;
 
     setIsGeneratingGoalAffirmations(true);
+    setAiFeedback(null);
     try {
       if (subAreaId) {
         const sub = domain.subAreas.find(s => s.id === subAreaId);
         if (sub) {
           const affirmations = await coachingService.suggestGoalAffirmations([sub.goal || sub.name]);
+          const nextAffirmation = affirmations[0]?.trim() || sub.affirmation || "";
           setDomains(prev => prev.map(d => {
             if (d.id !== domainId) return d;
             const updatedSubAreas = d.subAreas.map(s => {
               if (s.id !== subAreaId) return s;
-              return { ...s, affirmation: affirmations[0] || s.affirmation };
+              return { ...s, affirmation: nextAffirmation };
             });
             return { ...d, subAreas: updatedSubAreas };
           }));
+          if (nextAffirmation.trim()) {
+            setAiFeedback(null);
+          } else {
+            showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
+          }
         }
       } else {
         const affirmations = await coachingService.suggestGoalAffirmations(domain.subAreas.map(s => s.goal || s.name));
+        const nextSubAreas = domain.subAreas.map((s, idx) => ({
+          ...s,
+          affirmation: affirmations[idx]?.trim() || s.affirmation || ""
+        }));
         setDomains(prev => prev.map(d => {
           if (d.id !== domainId) return d;
-          const updatedSubAreas = d.subAreas.map((s, idx) => ({
-            ...s,
-            affirmation: affirmations[idx] || s.affirmation
-          }));
-          return { ...d, subAreas: updatedSubAreas };
+          return { ...d, subAreas: nextSubAreas };
         }));
+        if (nextSubAreas.some(s => s.affirmation?.trim())) {
+          setAiFeedback(null);
+        } else {
+          showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
+        }
       }
     } catch (error) {
       console.error("Error generating goal affirmations:", error);
-      showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
+      const hasUsableAffirmations = subAreaId
+        ? Boolean(domain.subAreas.find(s => s.id === subAreaId)?.affirmation?.trim())
+        : domain.subAreas.some(s => s.affirmation?.trim());
+      if (!hasUsableAffirmations) {
+        showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
+      } else {
+        setAiFeedback(null);
+      }
     } finally {
       setIsGeneratingGoalAffirmations(false);
     }
@@ -1266,6 +1291,8 @@ export default function App() {
       
       setActiveDomainId(newlyProcessedDomains[0].id);
       setShowDomainVisionResults(true);
+      setAiFeedback(null);
+      window.setTimeout(() => scrollViewportToTop('smooth'), 100);
     } catch (error) {
       console.error("Error completing discovery:", error);
       showAiFallback();
@@ -2065,12 +2092,14 @@ export default function App() {
   };
 
   const isNaturalScrollStep = step === CoachingStep.MASTERPLAN || step === CoachingStep.CONSOLIDATED_PLAN;
+  const currentSessionDomainNames = currentSessionDomains.map(domain => domain.name).filter(Boolean);
+  const currentSessionFocusAreaNames = currentSessionDomains.flatMap(domain => domain.subAreas.map(sub => sub.name).filter(Boolean));
 
   return (
     <div className={cn(
       "flex flex-col bg-[#FDFCFB] text-[#2D2D2D] font-sans selection:bg-emerald-100",
       "min-h-screen overflow-y-auto"
-    )}>
+    )} ref={appShellRef}>
       {/* Header */}
       <header className="bg-black text-white shrink-0 sticky top-0 z-[2000] border-b border-white/5">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5">
@@ -2080,7 +2109,7 @@ export default function App() {
                 {logoFailed ? (
                   <div className="flex flex-col text-left min-w-0">
                     <span className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white leading-tight truncate">DreamSheet AI</span>
-                    <span className="hidden md:block text-[#888888] italic text-[11px] font-light truncate">"The best way to predict the future is to make it up"</span>
+                    <span className="hidden md:block text-[#888888] text-[11px] font-light truncate">Create clarity. Build direction. Take action.</span>
                   </div>
                 ) : (
                   <img
@@ -2439,7 +2468,10 @@ export default function App() {
                     <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-600/10">
                       <Target size={18} />
                     </div>
-                    <span className="text-lg font-bold tracking-tight text-stone-900">DREAMsheet AI</span>
+                    <div className="flex flex-col items-start">
+                      <span className="text-lg font-bold tracking-tight text-stone-900">DREAMsheet AI</span>
+                      <span className="text-[10px] md:text-xs font-medium text-stone-500 leading-tight">Create clarity. Build direction. Take action.</span>
+                    </div>
                   </motion.div>
                   
                   <h1 className="text-lg sm:text-2xl md:text-3xl font-light text-stone-900 leading-tight text-center md:text-left w-full sm:whitespace-nowrap">
@@ -3009,7 +3041,7 @@ export default function App() {
                               <div 
                                 key={subArea.id} 
                                 onClick={() => toggleSubAreaSelection(activeDomainId, subArea.id)}
-                                className={`relative p-8 rounded-3xl border transition-all cursor-pointer group flex flex-col items-start gap-4 ${
+                                className={`relative min-h-[132px] p-6 md:p-8 rounded-3xl border transition-all cursor-pointer group flex flex-col items-start gap-4 ${
                                   subArea.selected !== false 
                                     ? "bg-white border-emerald-300 shadow-xl shadow-emerald-600/5 ring-1 ring-emerald-500/10" 
                                     : "bg-stone-50 border-stone-100 shadow-sm opacity-40 hover:opacity-80"
@@ -3036,8 +3068,8 @@ export default function App() {
                                     value={subArea.name}
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => updateSubAreaName(activeDomainId, subArea.id, e.target.value)}
-                                    rows={1}
-                                    className={`flex-1 bg-transparent border-none p-0 text-lg font-light text-stone-900 focus:ring-0 cursor-text transition-colors resize-none overflow-hidden leading-tight ${
+                                    rows={2}
+                                    className={`flex-1 min-h-[3rem] bg-transparent border-none p-0 text-base md:text-lg font-light text-stone-900 focus:ring-0 cursor-text transition-colors resize-none overflow-hidden whitespace-normal leading-snug ${
                                       subArea.selected !== false ? "opacity-100" : "opacity-50"
                                     }`}
                                   />
@@ -3581,26 +3613,21 @@ export default function App() {
                           </div>
                           
                           <div className="space-y-3 pt-2">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                               <label className="text-[10px] font-extrabold text-stone-400 uppercase tracking-wider block">Empowering Affirmation</label>
-                              <div className="relative group">
-                                <button 
-                                  onClick={() => generateGoalAffirmations(domain.id, sub.id)}
-                                  disabled={isGeneratingGoalAffirmations}
-                                  className="flex items-center justify-center w-8 h-8 bg-emerald-50 text-emerald-600 rounded-full hover:bg-emerald-100 transition-colors border border-emerald-100 disabled:opacity-50 cursor-pointer shadow-sm"
-                                  title="Regenerate this affirmation using AI"
-                                  aria-label="Regenerate this affirmation using AI"
-                                >
-                                  {isGeneratingGoalAffirmations ? (
-                                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="inline-flex">
-                                      <Bot size={12} />
-                                    </motion.div>
-                                  ) : <Sparkles size={12} />}
-                                </button>
-                                <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 hidden w-52 rounded-xl bg-stone-900 px-3 py-2 text-xs font-medium text-white shadow-lg group-hover:block group-focus-within:block">
-                                  Regenerate this affirmation using AI
-                                </div>
-                              </div>
+                              <button 
+                                onClick={() => generateGoalAffirmations(domain.id, sub.id)}
+                                disabled={isGeneratingGoalAffirmations}
+                                className="flex w-full sm:w-auto items-center justify-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-100 transition-colors border border-emerald-100 disabled:opacity-50 cursor-pointer shadow-sm text-[9px] sm:text-[10px] font-bold uppercase tracking-widest"
+                                title="Suggest alternative affirmations"
+                              >
+                                {isGeneratingGoalAffirmations ? (
+                                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: "linear" }} className="inline-flex">
+                                    <Bot size={12} />
+                                  </motion.div>
+                                ) : <Sparkles size={12} />}
+                                <span>Suggest Alternative Affirmations</span>
+                              </button>
                             </div>
                             <textarea 
                               value={sub.affirmation || ""}
@@ -3700,13 +3727,22 @@ export default function App() {
                   <div className="p-4 md:p-8 space-y-8 md:space-y-12 bg-white">
                     <div className="grid grid-cols-1 gap-8">
                       <div className="bg-emerald-600 text-white rounded-2xl p-5 md:p-8 shadow-xl flex flex-col justify-center">
-                        <h3 className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-emerald-100 mb-2">Plan Intensity Index</h3>
-                        <div className="text-4xl md:text-5xl font-light mb-4">
-                          {currentSessionDomains.reduce((acc, d) => acc + d.subAreas.length, 0)} <span className="text-lg md:text-xl">Focus Areas</span>
+                        <h3 className="text-[9px] md:text-[10px] font-bold uppercase tracking-widest text-emerald-100 mb-3">Masterplan Summary</h3>
+                        <div className="text-3xl md:text-4xl font-light mb-5">
+                          {currentSessionFocusAreaNames.length} <span className="text-lg md:text-xl">Focus {currentSessionFocusAreaNames.length === 1 ? "Area" : "Areas"}</span>
                         </div>
-                        <p className="text-emerald-100 text-xs md:text-sm leading-relaxed max-w-sm">
-                          This strategic blueprint across {currentSessionDomains.length} domains represents a total growth potential of {currentSessionDomains.reduce((acc, d) => acc + ((d.futureRating || 0) - (d.currentRating || 0)), 0)} points.
-                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs md:text-sm leading-relaxed">
+                          <div>
+                            <p className="text-emerald-100/80 font-bold uppercase tracking-widest text-[9px] mb-1">
+                              {currentSessionDomainNames.length === 1 ? "Selected Domain" : "Selected Domains"}
+                            </p>
+                            <p className="text-white font-medium">{currentSessionDomainNames.join(", ") || "No domain selected"}</p>
+                          </div>
+                          <div>
+                            <p className="text-emerald-100/80 font-bold uppercase tracking-widest text-[9px] mb-1">Focus Area Names</p>
+                            <p className="text-white font-medium">{currentSessionFocusAreaNames.join(", ") || "No focus areas selected"}</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
