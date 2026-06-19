@@ -435,6 +435,8 @@ export default function App() {
   const [emailAddress, setEmailAddress] = useState('');
   const [isSavingSubmission, setIsSavingSubmission] = useState(false);
   const [submissionSaveMessage, setSubmissionSaveMessage] = useState('');
+  const [hasSavedDreamSheet, setHasSavedDreamSheet] = useState(false);
+  const [saveReminderMessage, setSaveReminderMessage] = useState('');
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
@@ -521,6 +523,9 @@ export default function App() {
   };
 
   const handleExportPDF = () => {
+    if (!hasSavedDreamSheet) {
+      setSaveReminderMessage("Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.");
+    }
     window.print();
   };
 
@@ -561,6 +566,8 @@ export default function App() {
         }
       });
       setSubmissionSaveMessage('DREAMsheet saved successfully.');
+      setSaveReminderMessage('');
+      setHasSavedDreamSheet(true);
     } catch (error) {
       console.error("Could not save DREAMsheet submission:", error);
       setSubmissionSaveMessage('Could not save DREAMsheet. Please use Print/PDF for now.');
@@ -741,6 +748,9 @@ export default function App() {
     setStep(CoachingStep.WELCOME);
     setShowResetConfirm(false);
     setShowNameCapture(true);
+    setHasSavedDreamSheet(false);
+    setSaveReminderMessage('');
+    setSubmissionSaveMessage('');
     localStorage.removeItem('coaching_plan_state');
   };
 
@@ -4412,6 +4422,9 @@ export default function App() {
                 </div>
 
                 <div className="bg-stone-50 px-6 md:px-12 py-6 border-t border-stone-100 flex flex-wrap items-center justify-center gap-4 shrink-0 no-print">
+                  <div className="w-full max-w-3xl rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-xs md:text-sm font-semibold leading-relaxed text-emerald-900 shadow-sm">
+                    Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.
+                  </div>
                   <button 
                     onClick={() => skipToStep(CoachingStep.MASTERPLAN)}
                     className="bg-white border border-stone-200 text-stone-600 px-6 md:px-8 py-3 md:py-4 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-stone-50 transition-all shadow-lg tracking-wide text-xs md:text-sm w-full md:w-auto"
@@ -4438,11 +4451,21 @@ export default function App() {
                     <Download size={18} /> Download Strategic PDF
                   </button>
                   <button 
-                    onClick={() => setShowResetConfirm(true)}
+                    onClick={() => {
+                      if (!hasSavedDreamSheet) {
+                        setSaveReminderMessage("Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.");
+                      }
+                      setShowResetConfirm(true);
+                    }}
                     className="text-stone-400 hover:text-red-500 transition-colors text-xs md:text-sm font-bold tracking-wide flex items-center gap-2 px-4 py-3 hover:bg-stone-100 rounded-xl"
                   >
                     <RotateCcw size={14} /> Reset Journey
                   </button>
+                  {saveReminderMessage && (
+                    <p className="w-full max-w-3xl rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-xs md:text-sm font-semibold text-amber-900" aria-live="polite">
+                      {saveReminderMessage}
+                    </p>
+                  )}
                   {submissionSaveMessage && (
                     <p className="w-full text-center text-xs md:text-sm font-semibold text-stone-600" aria-live="polite">
                       {submissionSaveMessage}
@@ -4730,6 +4753,11 @@ export default function App() {
               <p className="text-stone-600 mb-8">
                 This will permanently clear your current coaching plan and progress. You'll need to start the process from the beginning.
               </p>
+              {!hasSavedDreamSheet && (
+                <p className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-relaxed text-amber-900">
+                  Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.
+                </p>
+              )}
               <div className="flex gap-3">
                 <button 
                   onClick={() => setShowResetConfirm(false)}
