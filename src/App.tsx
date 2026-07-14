@@ -4377,21 +4377,6 @@ export default function App() {
                                 </div>
 
                                 <div className="space-y-6">
-                                    <div className="p-6 bg-white rounded-2xl border border-stone-100 shadow-sm space-y-4">
-                                        <div className="flex items-center gap-2">
-                                            <ShieldAlert size={16} className="text-amber-500" />
-                                            <label className="text-[9px] font-bold uppercase tracking-widest text-stone-400">Contingency Plan</label>
-                                        </div>
-                                        <div className="space-y-4">
-                                            {getPlanActionSteps(sub, domain).map((a, idx) => (
-                                                <div key={idx} className="space-y-2">
-                                                    <p className="text-[10px] font-bold text-stone-500 italic">Action {idx + 1}</p>
-                                                    <p className="text-xs text-stone-800 font-medium leading-relaxed">{getContingencyPlan(a)}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
                                     <div className="p-6 bg-emerald-600 text-white rounded-2xl shadow-xl space-y-3">
                                         <label className="text-[9px] font-bold uppercase tracking-widest text-emerald-200">Inner Alignment</label>
                                         <p className="text-base md:text-lg font-serif italic leading-relaxed">
