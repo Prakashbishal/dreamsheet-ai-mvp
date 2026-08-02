@@ -26,7 +26,6 @@ import {
   RotateCcw,
   MessageSquare,
   Check,
-  Mail,
   Users,
   Clock,
   ExternalLink,
@@ -38,7 +37,7 @@ import {
   Printer
 } from 'lucide-react';
 import { CoachingStep, Domain, SubArea, CoachingPlan, ActionStep } from './types';
-import { coachingService, hasGeminiApiKey } from './services/coachingService';
+import { coachingService, getAiGenerationMessage, hasGeminiApiKey } from './services/coachingService';
 import { cn } from './lib/utils';
 import { WaterfallRoadmap } from './components/WaterfallRoadmap';
 
@@ -214,16 +213,6 @@ try {
   console.error("Error running one-time reset logic", e);
 }
 
-try {
-  const isNewSession = !sessionStorage.getItem('coaching_session_initialized');
-  if (isNewSession) {
-    localStorage.removeItem('coaching_plan_state');
-    sessionStorage.setItem('coaching_session_initialized', 'true');
-  }
-} catch (e) {
-  console.error("Error managing session storage", e);
-}
-
 export default function App() {
   // Helper for lazy initial state from local storage
   const getInitialState = (key: string, defaultValue: any) => {
@@ -240,6 +229,8 @@ export default function App() {
   };
 
   const [step, setStep] = useState<CoachingStep>(() => getInitialState('step', CoachingStep.WELCOME));
+  const stepRef = useRef(step);
+  stepRef.current = step;
   const [domains, setDomains] = useState<Domain[]>(() => getInitialState('domains', []));
   const [loading, setLoading] = useState(false);
   const [clientName, setClientName] = useState(() => getInitialState('clientName', ''));
@@ -381,6 +372,7 @@ export default function App() {
   const [isGeneratingActionSteps, setIsGeneratingActionSteps] = useState(false);
   const [isPreparingTacticalRoadmap, setIsPreparingTacticalRoadmap] = useState(false);
   const [expandedSubAreas, setExpandedSubAreas] = useState<Record<string, boolean>>({});
+  const [showConsolidatedDetails, setShowConsolidatedDetails] = useState(false);
   const [isGeneratingObstacles, setIsGeneratingObstacles] = useState(false);
   const [isGeneratingObstacleSolution, setIsGeneratingObstacleSolution] = useState(false);
   const [isGeneratingDiscoveryObstacles, setIsGeneratingDiscoveryObstacles] = useState(false);
@@ -397,6 +389,10 @@ export default function App() {
 
   const showAiFallback = (message = AI_UNAVAILABLE_MESSAGE) => {
     setAiFeedback(message);
+  };
+
+  const showAiError = (error: unknown, continuation?: string) => {
+    setAiFeedback(getAiGenerationMessage(error, continuation));
   };
 
   const generateDiscoveryObstacles = async () => {
@@ -418,7 +414,7 @@ export default function App() {
       setDiscoveryResponses(newResponses);
     } catch (error) {
       console.error("Error generating discovery obstacles:", error);
-      showAiFallback("AI suggestions could not be generated. You can list obstacles manually and continue.");
+      showAiError(error, "You can list obstacles manually and continue.");
     } finally {
       setIsGeneratingDiscoveryObstacles(false);
     }
@@ -431,12 +427,11 @@ export default function App() {
   const [activeExplanation, setActiveExplanation] = useState<string | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
 
-  const [showEmailModal, setShowEmailModal] = useState(false);
-  const [emailAddress, setEmailAddress] = useState('');
   const [isSavingSubmission, setIsSavingSubmission] = useState(false);
   const [submissionSaveMessage, setSubmissionSaveMessage] = useState('');
   const [hasSavedDreamSheet, setHasSavedDreamSheet] = useState(false);
   const [saveReminderMessage, setSaveReminderMessage] = useState('');
+  const [localSaveStatus, setLocalSaveStatus] = useState<'saved' | 'error'>('saved');
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
@@ -512,16 +507,6 @@ export default function App() {
     return "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope.";
   };
 
-  const handleSendEmail = () => {
-    if (!emailAddress.trim()) return;
-    const summary = currentSessionDomains.map(d => {
-      return `Domain: ${d.name}\nEnd-goals:\n${d.subAreas.map(s => `- ${s.name}: ${s.affirmation}`).join('\n')}`;
-    }).join('\n\n');
-    const body = `Hi,\n\nHere is my DREAMSheet AI Masterplan:\n\n${summary}\n\nNotes: ${planNotes}\n\nGenerated on: ${new Date().toLocaleDateString()}`;
-    window.location.href = `mailto:${emailAddress}?subject=My DREAMSheet AI Masterplan&body=${encodeURIComponent(body)}`;
-    setShowEmailModal(false);
-  };
-
   const handleExportPDF = () => {
     if (!hasSavedDreamSheet) {
       setSaveReminderMessage("Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.");
@@ -570,7 +555,7 @@ export default function App() {
       setHasSavedDreamSheet(true);
     } catch (error) {
       console.error("Could not save DREAMsheet submission:", error);
-      setSubmissionSaveMessage('Could not save DREAMsheet. Please use Print/PDF for now.');
+      setSubmissionSaveMessage('Could not save DREAMsheet. Check your connection and select Save DREAMsheet to retry. You can also download the PDF as a backup.');
     } finally {
       setIsSavingSubmission(false);
     }
@@ -579,9 +564,15 @@ export default function App() {
   const handleAddCustomDomain = () => {
     if (newCustomDomain.trim()) {
       const trimmed = newCustomDomain.trim();
-      if (!POSSIBLE_DOMAINS.includes(trimmed) && !customDiscoveryDomains.includes(trimmed)) {
-        setCustomDiscoveryDomains([...customDiscoveryDomains, trimmed]);
-        setSelectedRoles([...selectedRoles, trimmed]);
+      const normalizedName = trimmed.toLocaleLowerCase();
+      const isPredefinedDomain = POSSIBLE_DOMAINS.some(domain => domain.name.toLocaleLowerCase() === normalizedName);
+      const isExistingCustomDomain = customDiscoveryDomains.some(domain => domain.toLocaleLowerCase() === normalizedName);
+
+      if (!isPredefinedDomain && !isExistingCustomDomain) {
+        setCustomDiscoveryDomains(previous => [...previous, trimmed]);
+        setSelectedRoles(previous => previous.includes(trimmed) ? previous : [...previous, trimmed]);
+        setLastSelectedDomain(trimmed);
+        setShowDomainVisionResults(false);
         scrollToDomainQuestionsSoon();
       }
       setNewCustomDomain('');
@@ -617,7 +608,7 @@ export default function App() {
     setCustomDiscoveryDomains(prev => prev.filter(d => d.toUpperCase() !== domainName.toUpperCase()));
   };
 
-  const skipToStep = (newStep: CoachingStep) => {
+  const skipToStep = (newStep: CoachingStep, historyMode: 'push' | 'replace' | 'none' = 'push') => {
     // If skipping to a step that requires data, populate some defaults if empty
     if (newStep !== CoachingStep.CLEAR_SPACE && newStep !== CoachingStep.WELCOME) {
       if (!clientName) setClientName('');
@@ -649,6 +640,13 @@ export default function App() {
     setIsGeneratingDomainVision(false);
     setAiFeedback(null);
 
+    if (historyMode === 'push' && newStep !== stepRef.current) {
+      window.history.pushState({ ...window.history.state, dreamsheetStep: newStep }, '', window.location.href);
+    } else if (historyMode === 'replace') {
+      window.history.replaceState({ ...window.history.state, dreamsheetStep: newStep }, '', window.location.href);
+    }
+
+    stepRef.current = newStep;
     setStep(newStep);
     
     // Tiny delay to ensure layout has settled before any automated scroll logic.
@@ -656,6 +654,24 @@ export default function App() {
       scrollViewportToTop('smooth');
     }, 100);
   };
+
+  useEffect(() => {
+    window.history.replaceState(
+      { ...window.history.state, dreamsheetStep: stepRef.current },
+      '',
+      window.location.href
+    );
+
+    const handlePopState = (event: PopStateEvent) => {
+      const historyStep = event.state?.dreamsheetStep;
+      if (Object.values(CoachingStep).includes(historyStep as CoachingStep)) {
+        skipToStep(historyStep as CoachingStep, 'none');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const isGlobalLoading = loading || 
     isGeneratingGoal || 
@@ -701,7 +717,13 @@ export default function App() {
       completedDomainIds,
       showNameCapture
     };
-    localStorage.setItem('coaching_plan_state', JSON.stringify(state));
+    try {
+      localStorage.setItem('coaching_plan_state', JSON.stringify(state));
+      setLocalSaveStatus('saved');
+    } catch (error) {
+      console.error('Could not save progress locally', error);
+      setLocalSaveStatus('error');
+    }
   }, [step, domains, clientName, coachName, timeHorizon, selectedRoles, lastSelectedDomain, discoveryResponses, activeDomainId, customDiscoveryDomains, planNotes, quizResponses, quizPhase, currentQuizIndex, currentDiscoveryIndex, distractions, planCreatedAt, isCoachMode, showQuiz, showStepList, showDomainVisionResults, suggestedDomains, completedDomainIds, showNameCapture]);
 
   // Scroll to top on entering vision/sub-domain view
@@ -745,7 +767,7 @@ export default function App() {
     setCurrentQuizIndex(0);
     setCurrentDiscoveryIndex(0);
     setPlanCreatedAt(new Date().toISOString());
-    setStep(CoachingStep.WELCOME);
+    skipToStep(CoachingStep.WELCOME, 'replace');
     setShowResetConfirm(false);
     setShowNameCapture(true);
     setHasSavedDreamSheet(false);
@@ -822,6 +844,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to initialize domain context for", domain.name, e);
+      showAiError(e, "You can continue and add the domain details manually.");
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, isGenerating: false } : d));
     }
   };
@@ -840,7 +863,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, domainGoal: suggestedGoal } : d));
     } catch (error) {
       console.error("Error generating goal:", error);
-      showAiFallback("AI suggestions could not be generated. You can write your end-goal manually and continue.");
+      showAiError(error, "You can write your end-goal manually and continue.");
     } finally {
       setIsGeneratingGoal(false);
     }
@@ -856,7 +879,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, domainVision: suggestedState } : d));
     } catch (error) {
       console.error("Error generating vision:", error);
-      showAiFallback("AI suggestions could not be generated. You can write your vision manually and continue.");
+      showAiError(error, "You can write your vision manually and continue.");
     } finally {
       setIsGeneratingVision(false);
     }
@@ -872,7 +895,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, why: suggestedWhy } : d));
     } catch (error) {
       console.error("Error generating domain why:", error);
-      showAiFallback("AI suggestions could not be generated. You can write your why manually and continue.");
+      showAiError(error, "You can write your why manually and continue.");
     } finally {
       setIsGeneratingWhy(false);
     }
@@ -922,14 +945,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error generating goal affirmations:", error);
-      const hasUsableAffirmations = subAreaId
-        ? Boolean(domain.subAreas.find(s => s.id === subAreaId)?.affirmation?.trim())
-        : domain.subAreas.some(s => s.affirmation?.trim());
-      if (!hasUsableAffirmations) {
-        showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
-      } else {
-        setAiFeedback(null);
-      }
+      showAiError(error, "Your existing affirmations are unchanged, and you can continue or try again later.");
     } finally {
       setIsGeneratingGoalAffirmations(false);
     }
@@ -965,7 +981,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, suggestedAffirmations: affirmations } : d));
     } catch (error) {
       console.error("Error generating affirmations:", error);
-      showAiFallback("AI suggestions could not be generated. You can write affirmations manually and continue.");
+      showAiError(error, "Your existing affirmations are unchanged, and you can continue or try again later.");
     } finally {
       setIsGeneratingAffirmations(false);
     }
@@ -1003,7 +1019,7 @@ export default function App() {
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, subAreas: updatedSubAreas } : d));
     } catch (error) {
       console.error("Error generating end goals:", error);
-      showAiFallback("AI suggestions could not be generated. You can write end-goals manually and continue.");
+      showAiError(error, "Your existing end-goals are unchanged, and you can edit them manually or continue.");
       setDomains(prev => prev.map(d => {
         if (d.id !== domainId) return d;
         return {
@@ -1090,7 +1106,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating action steps:", error);
-      showAiFallback("AI suggestions could not be generated. You can add action steps manually and continue.");
+      showAiError(error, "Your existing action steps are unchanged, and you can add steps manually or continue.");
     } finally {
       setIsGeneratingActionSteps(false);
     }
@@ -1150,6 +1166,7 @@ export default function App() {
           };
         } catch (error) {
           console.error("Error preparing tactical roadmap for", sub.name, error);
+          showAiError(error, "The existing plan is unchanged, and you can continue with a manual action step.");
           return { domainId: domain.id, subId: sub.id, steps: [buildContextualActionStepFallback(sub, domain)] };
         }
       }));
@@ -1202,7 +1219,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating obstacles:", error);
-      showAiFallback("AI suggestions could not be generated. You can add obstacles manually and continue.");
+      showAiError(error, "Your existing obstacles are unchanged, and you can add them manually or continue.");
     } finally {
       setIsGeneratingObstacles(false);
     }
@@ -1231,7 +1248,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating solution:", error);
-      showAiFallback("AI suggestions could not be generated. You can write a solution manually and continue.");
+      showAiError(error, "Your existing solution is unchanged, and you can write one manually or continue.");
     } finally {
       setIsGeneratingObstacleSolution(false);
     }
@@ -1275,7 +1292,7 @@ export default function App() {
           };
         } catch (err) {
           console.error(`Error generating context for ${domain.name}:`, err);
-          showAiFallback();
+          showAiError(err, "Fallback focus areas are available so you can continue.");
           return {
             ...domain,
             domainVision: domain.domainVision || "",
@@ -1305,7 +1322,7 @@ export default function App() {
       window.setTimeout(() => scrollViewportToTop('smooth'), 100);
     } catch (error) {
       console.error("Error completing discovery:", error);
-      showAiFallback();
+      showAiError(error, "You can keep your answers and try again later.");
     } finally {
       setIsGeneratingDomainVision(false);
     }
@@ -1341,7 +1358,7 @@ export default function App() {
       }));
     } catch (error) {
       console.error("Error generating alternative sub-areas:", error);
-      showAiFallback();
+      showAiError(error, "Fallback focus areas are available so you can continue.");
       const existingNames = domain.subAreas.map(s => s.name.toLowerCase());
       const fallbackSubAreas = FALLBACK_FOCUS_AREAS
         .filter(name => !existingNames.includes(name.toLowerCase()))
@@ -1447,7 +1464,7 @@ export default function App() {
       if (updatedDomains.length > 0) setActiveDomainId(updatedDomains[0].id);
     } catch (error) {
       console.error("Error generating sub-areas:", error);
-      showAiFallback();
+      showAiError(error, "Fallback focus areas are available so you can continue.");
       const updatedDomains = domains.map(domain => ({
         ...domain,
         subAreas: domain.subAreas.length > 0 ? domain.subAreas : createFallbackSubAreas(true)
@@ -1484,7 +1501,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to regenerate goals", e);
-      showAiFallback("AI suggestions could not be generated. You can edit these details manually and continue.");
+      showAiError(e, "Your existing goals are unchanged, and you can edit them manually or continue.");
     } finally {
       setLoading(false);
     }
@@ -1514,7 +1531,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to refine action steps", e);
-      showAiFallback("AI suggestions could not be generated. You can refine action steps manually and continue.");
+      showAiError(e, "Your existing action steps are unchanged, and you can edit them manually or continue.");
     } finally {
       setLoading(false);
     }
@@ -1550,7 +1567,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to fetch domain strategy", e);
-      showAiFallback("AI suggestions could not be generated. You can continue with fallback focus areas or add your own.");
+      showAiError(e, "Fallback focus areas are available, or you can add your own.");
       setDomains(prev => prev.map(d => d.id === domainId ? { ...d, isGenerating: false } : d));
     }
   };
@@ -1963,7 +1980,7 @@ export default function App() {
       }));
     } catch (e) {
       console.error("Failed to regenerate DREAM details", e);
-      showAiFallback("AI suggestions could not be generated. You can edit these details manually and continue.");
+      showAiError(e, "Your existing DREAM details are unchanged, and you can edit them manually or continue.");
     } finally {
       setLoading(false);
     }
@@ -2095,7 +2112,7 @@ export default function App() {
       }
     } catch (e) {
       console.error("Failed to generate DREAM details", e);
-      showAiFallback("AI suggestions could not be generated. You can edit your DREAM details manually and continue.");
+      showAiError(e, "Your existing DREAM details are unchanged, and you can edit them manually or continue.");
     } finally {
       setIsArchitecting(false);
     }
@@ -2192,10 +2209,13 @@ export default function App() {
                       "p-2 rounded-full transition-all border border-white/5",
                       showStepList ? "bg-emerald-600 text-white" : "text-stone-500 hover:text-emerald-500 hover:bg-white/5"
                     )}
-                    title="Open step menu"
-                    aria-label="Open step menu"
+                    title="Edit or revisit your DREAMsheet steps"
+                    aria-label="Edit or revisit steps"
                   >
-                    <Bot size={18} />
+                    <span className="flex items-center gap-2">
+                      <Bot size={18} />
+                      <span className="hidden sm:inline text-[10px] font-bold uppercase tracking-wider">Edit steps</span>
+                    </span>
                   </button>
 
                   <AnimatePresence>
@@ -2255,6 +2275,12 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {localSaveStatus === 'error' && (
+        <div className="no-print bg-red-50 border-b border-red-200 px-4 py-2 text-center text-xs font-semibold text-red-800" role="alert">
+          Your latest changes could not be saved on this device. Keep this page open and free some browser storage before continuing.
+        </div>
+      )}
 
       <main className={cn("flex-1 relative", "overflow-visible")}>
         <div className={cn(
@@ -3134,6 +3160,10 @@ export default function App() {
                     <p className="text-stone-600 text-sm text-center md:text-left">
                       Set your current state and target for your <b>{domains.find(d => d.id === activeDomainId)?.name}</b> domains.
                     </p>
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left text-sm leading-relaxed text-amber-950">
+                      {/* TODO: Colin to supply the approved Ratings / Matrix explanation wording here. */}
+                      <p className="font-semibold">Ratings and matrix guidance is awaiting approved wording.</p>
+                    </div>
                   </div>
                 </div>
 
@@ -3283,7 +3313,7 @@ export default function App() {
 
                               {/* Q4: Not Important / Not Urgent (Eliminate) - Bottom Left */}
                               <div className="p-3 flex flex-col justify-end items-start border-r border-t border-transparent">
-                                <span className="text-[8px] text-stone-400 mb-1 font-medium italic hidden sm:inline">Not Important & Urgent</span>
+                                <span className="text-[8px] text-stone-400 mb-1 font-medium italic hidden sm:inline">Not Important, Not Urgent</span>
                                 <span className="text-[9px] font-black tracking-widest text-stone-600 bg-stone-100 px-1.5 py-0.5 rounded-md border border-stone-200/50 uppercase leading-none">
                                   Q4 · Eliminate
                                 </span>
@@ -3353,7 +3383,7 @@ export default function App() {
                             onClick={() => skipToStep(CoachingStep.DOMAIN)}
                             className="bg-white border border-stone-200 text-stone-600 px-5 sm:px-8 py-3.5 sm:py-5 rounded-2xl font-bold flex items-center justify-center gap-3 hover:bg-stone-50 transition-all shadow-xl uppercase tracking-widest text-xs sm:text-sm"
                           >
-                            <ChevronLeft size={20} /> Back
+                            <ChevronLeft size={20} /> Back to Focus Areas
                           </button>
                           <button 
                             onClick={() => skipToStep(CoachingStep.END_GOALS)}
@@ -3782,7 +3812,7 @@ export default function App() {
                         
                         <div className="grid grid-cols-1 gap-6">
                           {domain.subAreas.map((sub, sIdx) => {
-                            const isExpanded = expandedSubAreas[sub.id] ?? true;
+                            const isExpanded = expandedSubAreas[sub.id] ?? false;
                             
                             return (
                               <div key={sub.id} className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden hover:shadow-md transition-all group">
@@ -4303,6 +4333,19 @@ export default function App() {
                     <WaterfallRoadmap domains={currentSessionDomains} clientName={clientName} />
                   </div>
 
+                  <div className="no-print flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowConsolidatedDetails(value => !value)}
+                      className="bg-white border border-stone-200 text-stone-700 px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-stone-50 transition-colors flex items-center gap-2"
+                      aria-expanded={showConsolidatedDetails}
+                    >
+                      {showConsolidatedDetails ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      {showConsolidatedDetails ? 'Hide detailed plan' : 'Show detailed plan'}
+                    </button>
+                  </div>
+
+                  <div className="consolidated-details" data-expanded={showConsolidatedDetails}>
                   {currentSessionDomains.map((domain, dIdx) => (
                     <div key={domain.id} className="domain-page min-h-[auto] md:min-h-[800px] flex flex-col space-y-8 md:space-y-12 border-b border-stone-100 pb-12 md:pb-24 last:border-0 last:pb-0">
                       <div className="space-y-4 md:space-y-6 text-center md:text-left">
@@ -4416,12 +4459,9 @@ export default function App() {
                   >
                     <ChevronLeft size={18} /> Back to Workshop
                   </button>
-                  <button 
-                    onClick={() => setShowEmailModal(true)}
-                    className="bg-stone-800 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-stone-900 transition-all flex items-center justify-center gap-3 shadow-xl shadow-stone-800/20 w-full md:w-auto"
-                  >
-                    <Mail size={18} /> Email My Full Plan
-                  </button>
+                  <div className="w-full md:w-auto rounded-xl border border-stone-200 bg-stone-100 px-6 md:px-8 py-3.5 text-center text-xs md:text-sm font-bold text-stone-500" title="Direct email delivery requires a production email service and is not enabled.">
+                    Email unavailable — download the PDF to share
+                  </div>
                   <button 
                     onClick={handleSaveDreamSheet}
                     disabled={isSavingSubmission}
@@ -4456,6 +4496,7 @@ export default function App() {
                       {submissionSaveMessage}
                     </p>
                   )}
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -4852,65 +4893,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Email Modal */}
-      <AnimatePresence>
-        {showEmailModal && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[3000] bg-stone-900/40 backdrop-blur-md flex items-center justify-center p-6"
-          >
-            <motion.div 
-              initial={{ scale: 0.9, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 20 }}
-              className="bg-white rounded-[2.5rem] shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden"
-            >
-              <div className="bg-stone-900 p-8 text-white">
-                <div className="flex items-center gap-3 text-emerald-400 mb-2">
-                  <Mail size={24} />
-                  <span className="text-[10px] font-bold uppercase tracking-[0.3em]">Email DREAMSheet</span>
-                </div>
-                <h3 className="text-2xl font-light">Send your Masterplan</h3>
-              </div>
-              
-              <div className="p-8 space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Recipient Email Address</label>
-                  <input 
-                    type="email"
-                    value={emailAddress}
-                    onChange={(e) => setEmailAddress(e.target.value)}
-                    placeholder="e.g., success@yourjourney.com"
-                    className="w-full bg-stone-50 border border-stone-200 rounded-2xl p-4 text-sm focus:ring-2 focus:ring-emerald-500 transition-all font-medium"
-                  />
-                </div>
-                
-                <div className="flex gap-3">
-                  <button 
-                    onClick={handleSendEmail}
-                    disabled={!emailAddress.includes('@')}
-                    className="flex-1 bg-emerald-600 text-white py-4 rounded-2xl font-bold text-sm hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/20 disabled:opacity-50"
-                  >
-                    Send DREAMSheet
-                  </button>
-                  <button 
-                    onClick={() => setShowEmailModal(false)}
-                    className="px-6 bg-stone-100 text-stone-600 py-4 rounded-2xl font-bold text-sm hover:bg-stone-200 transition-all font-bold"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                
-                <p className="text-[10px] text-stone-400 italic text-center">
-                  Note: This will open your default email client with a generated summary of your plan.
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
@@ -4982,7 +4964,7 @@ const QuizOverlay = ({
       setSelectedDomainNames(finalSuggestions.map(s => s.name));
     } catch (error) {
       console.error("Quiz analysis failed:", error);
-      setQuizNotice("AI domain suggestions could not be generated. You can continue with fallback domains or add your own.");
+      setQuizNotice(getAiGenerationMessage(error, "You can continue with fallback domains or add your own."));
       setSuggestedDomains(FALLBACK_DOMAIN_SUGGESTIONS);
       setSelectedDomainNames(FALLBACK_DOMAIN_SUGGESTIONS.map(s => s.name));
     } finally {

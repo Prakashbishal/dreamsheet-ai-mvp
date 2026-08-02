@@ -29,7 +29,7 @@ type GeminiErrorDetails = {
 
 const requireGeminiApiKey = () => {
   if (!hasGeminiApiKey) {
-    throw new Error("GEMINI_API_KEY is missing. AI suggestions will be unavailable.");
+    throw new AiGenerationError("generic", "Gemini API key is unavailable");
   }
 };
 
@@ -51,6 +51,10 @@ const getGeminiErrorDetails = (error: unknown) => {
 const isQuotaError = (status: string, message: string) =>
   status.includes("429") || /quota|rate limit/i.test(message);
 
+const isNetworkError = (error: unknown, status: string, message: string) =>
+  error instanceof TypeError ||
+  (status === "unknown" && /network|failed to fetch|fetch failed|offline|connection/i.test(message));
+
 const isUnsupportedThinkingError = (status: string, message: string) =>
   (status.includes("400") || /invalid_argument/i.test(status)) &&
   /thinking.+not supported|not supported.+thinking/i.test(message);
@@ -65,6 +69,33 @@ const removeThinkingFields = (config: Record<string, unknown>) => {
   delete config.thinkingConfig;
   delete config.thinkingBudget;
   delete config.thinkingLevel;
+};
+
+export type AiGenerationErrorKind = "quota" | "network" | "generic";
+
+export class AiGenerationError extends Error {
+  constructor(
+    public readonly kind: AiGenerationErrorKind,
+    message: string,
+    cause?: unknown
+  ) {
+    super(message, { cause });
+    this.name = "AiGenerationError";
+  }
+}
+
+const AI_USER_MESSAGES: Record<AiGenerationErrorKind, string> = {
+  quota: "AI generation is temporarily unavailable due to usage limits. Please try again shortly.",
+  network: "AI generation is temporarily unavailable because the connection was interrupted. Please check your connection and try again.",
+  generic: "AI generation is temporarily unavailable. Please try again shortly."
+};
+
+export const getAiGenerationMessage = (error: unknown, continuation?: string) => {
+  const baseMessage = error instanceof AiGenerationError
+    ? AI_USER_MESSAGES[error.kind]
+    : AI_USER_MESSAGES.generic;
+
+  return continuation ? `${baseMessage} ${continuation}` : baseMessage;
 };
 
 const sanitizeConfig = (config?: GenerateContentConfig) => {
@@ -103,7 +134,11 @@ const generateWithFallback = async (
       console.warn("Gemini generateContent failed", { model, status });
 
       if (isQuotaError(status, message)) {
-        throw new Error("Gemini quota exceeded. Please wait before trying again or check your Gemini API quota.");
+        throw new AiGenerationError("quota", "Gemini quota exceeded", error);
+      }
+
+      if (isNetworkError(error, status, message)) {
+        throw new AiGenerationError("network", "Gemini network request failed", error);
       }
 
       lastError = error;
@@ -111,11 +146,11 @@ const generateWithFallback = async (
         continue;
       }
 
-      throw error;
+      throw new AiGenerationError("generic", "Gemini generation failed", error);
     }
   }
 
-  throw new Error(AI_FALLBACK_MESSAGE, { cause: lastError });
+  throw new AiGenerationError("generic", AI_FALLBACK_MESSAGE, lastError);
 };
 
 const parseJson = <T>(text: string | undefined, fallback: T): T => {

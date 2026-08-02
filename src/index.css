@@ -35,6 +35,10 @@
     scrollbar-width: none;
   }
 
+  .consolidated-details[data-expanded="false"] {
+    display: none;
+  }
+
   @media print {
     .no-print,
     .no-export,
@@ -60,6 +64,15 @@
 
     body {
       background: white !important;
+    }
+
+    .consolidated-details[data-expanded="false"] {
+      display: block !important;
+    }
+
+    .domain-page:last-child {
+      break-after: auto !important;
+      page-break-after: auto !important;
     }
   }
 }
