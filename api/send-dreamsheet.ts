@@ -20,6 +20,20 @@ function methodNotAllowed(): Response {
   );
 }
 
+function getSafeErrorDetails(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return { message: 'Unknown error' };
+  }
+
+  const value = error as Record<string, unknown>;
+  return {
+    name: typeof value.name === 'string' ? value.name : undefined,
+    type: typeof value.type === 'string' ? value.type : undefined,
+    message: typeof value.message === 'string' ? value.message : undefined,
+    statusCode: typeof value.statusCode === 'number' ? value.statusCode : undefined,
+  };
+}
+
 function trimField(entry: FormDataEntryValue | null, maxLength: number): string | null {
   if (typeof entry !== 'string') return null;
   const value = entry.trim();
@@ -118,9 +132,13 @@ async function handleRequest(request: Request): Promise<Response> {
         html,
         attachments: [{ content: pdfBuffer, filename: safeFilename(coacheeName), contentType: 'application/pdf' }],
       }, { idempotencyKey: `dreamsheet-${requestId}` });
-      if (result.error || !result.data?.id) return json(502, { ok: false, error: 'SEND_FAILED' });
+      if (result.error || !result.data?.id) {
+        console.error('Resend send failed', getSafeErrorDetails(result.error));
+        return json(502, { ok: false, error: 'SEND_FAILED' });
+      }
       return json(200, { ok: true });
-    } catch {
+    } catch (error) {
+      console.error('Resend send threw', getSafeErrorDetails(error));
       return json(502, { ok: false, error: 'SEND_FAILED' });
     }
 }
