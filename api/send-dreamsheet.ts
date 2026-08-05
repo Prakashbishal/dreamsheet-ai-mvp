@@ -26,11 +26,15 @@ function getSafeErrorDetails(error: unknown) {
   }
 
   const value = error as Record<string, unknown>;
+
   return {
     name: typeof value.name === 'string' ? value.name : undefined,
     type: typeof value.type === 'string' ? value.type : undefined,
     message: typeof value.message === 'string' ? value.message : undefined,
-    statusCode: typeof value.statusCode === 'number' ? value.statusCode : undefined,
+    statusCode:
+      typeof value.statusCode === 'number'
+        ? value.statusCode
+        : undefined,
   };
 }
 
@@ -133,13 +137,27 @@ async function handleRequest(request: Request): Promise<Response> {
         attachments: [{ content: pdfBuffer, filename: safeFilename(coacheeName), contentType: 'application/pdf' }],
       }, { idempotencyKey: `dreamsheet-${requestId}` });
       if (result.error || !result.data?.id) {
-        console.error('Resend send failed', getSafeErrorDetails(result.error));
-        return json(502, { ok: false, error: 'SEND_FAILED' });
+        console.error(
+          'Resend send failed',
+          getSafeErrorDetails(result.error),
+        );
+
+        return json(502, {
+          ok: false,
+          error: 'SEND_FAILED',
+        });
       }
       return json(200, { ok: true });
     } catch (error) {
-      console.error('Resend send threw', getSafeErrorDetails(error));
-      return json(502, { ok: false, error: 'SEND_FAILED' });
+      console.error(
+        'Resend send threw',
+        getSafeErrorDetails(error),
+      );
+
+      return json(502, {
+        ok: false,
+        error: 'SEND_FAILED',
+      });
     }
 }
 
