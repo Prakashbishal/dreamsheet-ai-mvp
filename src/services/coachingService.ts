@@ -59,11 +59,13 @@ const isUnsupportedThinkingError = (status: string, message: string) =>
   (status.includes("400") || /invalid_argument/i.test(status)) &&
   /thinking.+not supported|not supported.+thinking/i.test(message);
 
-const isRetryableModelError = (status: string, message: string) =>
-  status.includes("503") ||
+const isModelCompatibilityError = (status: string, message: string) =>
   status.includes("404") ||
   isUnsupportedThinkingError(status, message) ||
-  /unavailable|high demand|model not found|not found/i.test(message);
+  /model not found|not found/i.test(message);
+
+const isServiceUnavailableError = (status: string, message: string) =>
+  status.includes("503") || /service unavailable|temporarily unavailable|high demand/i.test(message);
 
 const removeThinkingFields = (config: Record<string, unknown>) => {
   delete config.thinkingConfig;
@@ -84,26 +86,28 @@ export class AiGenerationError extends Error {
   }
 }
 
-const AI_USER_MESSAGES: Record<AiGenerationErrorKind, string> = {
-  quota: "AI generation is temporarily unavailable due to usage limits. Please try again shortly.",
-  network: "AI generation is temporarily unavailable because the connection was interrupted. Please check your connection and try again.",
-  generic: "AI generation is temporarily unavailable. Please try again shortly."
-};
+const AI_USER_MESSAGE = "We couldn’t complete that request right now. Please try again in a moment.";
 
-export const getAiGenerationMessage = (error: unknown, continuation?: string) => {
-  const baseMessage = error instanceof AiGenerationError
-    ? AI_USER_MESSAGES[error.kind]
-    : AI_USER_MESSAGES.generic;
+export const getAiGenerationMessage = (_error: unknown, _continuation?: string) => AI_USER_MESSAGE;
 
-  return continuation ? `${baseMessage} ${continuation}` : baseMessage;
+const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
+
+const getRetryDelay = (attempt: number) => {
+  const baseDelay = 1000 * (2 ** (attempt - 1));
+  const jitter = Math.floor(Math.random() * 250);
+  return baseDelay + jitter;
 };
 
 const sanitizeConfig = (config?: GenerateContentConfig) => {
-  if (!config) return undefined;
-
-  const sanitizedConfig = { ...config };
+  const sanitizedConfig: GenerateContentConfig = { ...(config || {}) };
   const configRecord = sanitizedConfig as Record<string, unknown>;
   removeThinkingFields(configRecord);
+
+  sanitizedConfig.httpOptions = {
+    ...sanitizedConfig.httpOptions,
+    timeout: 20000,
+    retryOptions: { attempts: 1 }
+  };
 
   if (configRecord.generationConfig && typeof configRecord.generationConfig === "object") {
     const generationConfig = {
@@ -123,42 +127,85 @@ const generateWithFallback = async (
   let lastError: unknown;
 
   for (const model of GEMINI_MODELS) {
-    try {
-      return await ai.models.generateContent({
-        model,
-        contents,
-        config: sanitizeConfig(config)
-      });
-    } catch (error) {
-      const { status, message } = getGeminiErrorDetails(error);
-      console.warn("Gemini generateContent failed", { model, status });
+    let attempt = 0;
 
-      if (isQuotaError(status, message)) {
-        throw new AiGenerationError("quota", "Gemini quota exceeded", error);
+    while (attempt < 3) {
+      attempt += 1;
+      try {
+        return await ai.models.generateContent({
+          model,
+          contents,
+          config: sanitizeConfig(config)
+        });
+      } catch (error) {
+        const { status, message } = getGeminiErrorDetails(error);
+        console.warn("Gemini generateContent failed", { model, status, attempt });
+        lastError = error;
+
+        if (isModelCompatibilityError(status, message)) {
+          break;
+        }
+
+        const quotaError = isQuotaError(status, message);
+        const networkError = isNetworkError(error, status, message);
+        const serviceUnavailable = isServiceUnavailableError(status, message);
+        const maxAttempts = quotaError ? 2 : 3;
+
+        if ((quotaError || networkError || serviceUnavailable) && attempt < maxAttempts) {
+          await wait(getRetryDelay(attempt));
+          continue;
+        }
+
+        if (quotaError) {
+          throw new AiGenerationError("quota", "Gemini quota exceeded", error);
+        }
+        if (networkError) {
+          throw new AiGenerationError("network", "Gemini network request failed", error);
+        }
+        throw new AiGenerationError("generic", "Gemini generation failed", error);
       }
-
-      if (isNetworkError(error, status, message)) {
-        throw new AiGenerationError("network", "Gemini network request failed", error);
-      }
-
-      lastError = error;
-      if (isRetryableModelError(status, message)) {
-        continue;
-      }
-
-      throw new AiGenerationError("generic", "Gemini generation failed", error);
     }
   }
 
   throw new AiGenerationError("generic", AI_FALLBACK_MESSAGE, lastError);
 };
 
-const parseJson = <T>(text: string | undefined, fallback: T): T => {
-  if (!text?.trim()) return fallback;
+const extractJsonText = (text: string | undefined) => {
+  if (!text?.trim()) return null;
+
+  const trimmed = text.trim();
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fencedMatch?.[1] || trimmed).trim();
+  const objectStart = candidate.indexOf('{');
+  const arrayStart = candidate.indexOf('[');
+  const starts = [objectStart, arrayStart].filter(index => index >= 0);
+  if (starts.length === 0) return null;
+
+  const start = Math.min(...starts);
+  const closingCharacter = candidate[start] === '{' ? '}' : ']';
+  const end = candidate.lastIndexOf(closingCharacter);
+  return end >= start ? candidate.slice(start, end + 1) : null;
+};
+
+const parseRequiredJson = <T>(text: string | undefined, context: string): T => {
+  const jsonText = extractJsonText(text);
+  if (!jsonText) {
+    console.error(`Gemini returned no usable JSON for ${context}`);
+    throw new AiGenerationError("generic", `Invalid Gemini JSON response for ${context}`);
+  }
+
   try {
-    return JSON.parse(text) as T;
-  } catch (e) {
-    console.error("Failed to parse Gemini JSON response", e);
+    return JSON.parse(jsonText) as T;
+  } catch (error) {
+    console.error(`Failed to parse Gemini JSON response for ${context}`, error);
+    throw new AiGenerationError("generic", `Malformed Gemini JSON response for ${context}`, error);
+  }
+};
+
+const parseJson = <T>(text: string | undefined, fallback: T): T => {
+  try {
+    return parseRequiredJson<T>(text, "structured generation");
+  } catch {
     return fallback;
   }
 };
@@ -424,12 +471,7 @@ Return the result as a JSON object.`;
           required: ["actionSteps"]
         }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      console.error("Failed to parse refined steps", e);
-      return { actionSteps: currentSteps };
-    }
+    return parseRequiredJson<{ actionSteps: any[] }>(response.text, "refined action steps");
   },
 
   async suggestDomainEndGoal(domainName: string, discoveryResponses: { question: string, answer: string }[]): Promise<string> {
@@ -482,11 +524,7 @@ Return the result as a JSON object.`;
           items: { type: Type.STRING }
         }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      return goals.map(() => "I am successfully achieving my goals and living my vision.");
-    }
+    return parseRequiredJson<string[]>(response.text, "goal affirmations");
   },
 
   async suggestDomainAffirmations(domainName: string, domainGoal: string, domainVision: string): Promise<string[]> {
@@ -504,11 +542,7 @@ Return the result as a JSON object.`;
           items: { type: Type.STRING }
         }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      return [AI_FALLBACK_MESSAGE];
-    }
+    return parseRequiredJson<string[]>(response.text, "domain affirmations");
   },
   
   async suggestSubAreaEndGoal(subAreaName: string, domainVision: string, timeHorizon: string): Promise<{ goal: string, recommendedDurationDays: number }> {
@@ -533,7 +567,7 @@ Return the result as a JSON object.`;
           required: ["goal", "recommendedDurationDays"]
         }
     });
-    return JSON.parse(response.text);
+    return parseRequiredJson<{ goal: string; recommendedDurationDays: number }>(response.text, "sub-area end-goal");
   },
 
   async suggestActionStepsForGoal(goal: string, domainName: string, context?: { focusAreaName?: string; startDate?: string; finishDate?: string; obstacles?: string[] }): Promise<{ task: string, measure: string, obstacle: string, overcome: string, startDate: string, endDate: string }[]> {
@@ -575,7 +609,21 @@ Return the result as a JSON object.`;
           }
         }
     });
-    return JSON.parse(response.text);
+    const steps = parseRequiredJson<{
+      task: string;
+      measure: string;
+      obstacle: string;
+      overcome: string;
+      startDate: string;
+      endDate: string;
+    }[]>(response.text, "action-step generation");
+
+    if (!Array.isArray(steps) || steps.length === 0 || steps.some(step => !step || typeof step.task !== "string" || !step.task.trim())) {
+      console.error("Gemini returned an invalid action-step structure");
+      throw new AiGenerationError("generic", "Invalid Gemini action-step structure");
+    }
+
+    return steps;
   },
 
   async suggestObstacles(goalName: string): Promise<string[]> {
@@ -592,11 +640,7 @@ Return the result as a JSON object.`;
           items: { type: Type.STRING }
         }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      return [AI_FALLBACK_MESSAGE];
-    }
+    return parseRequiredJson<string[]>(response.text, "obstacle suggestions");
   },
 
   async suggestObstacleSolution(goalName: string, obstacle: string): Promise<string> {
@@ -644,13 +688,7 @@ Return the result as a JSON object.`;
           }
         }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      return [
-        { name: AI_FALLBACK_MESSAGE, obstacles: [] }
-      ];
-    }
+    return parseRequiredJson<{ name: string; obstacles: { obstacle: string; solution: string }[] }[]>(response.text, "supporting end-goals");
   },
 
   async suggestDREAMDetails(subArea: string, current: number, future: number) {
@@ -822,26 +860,7 @@ Return the result as a JSON object.`;
           required: ["suggestedGoals", "suggestedAffirmations", "suggestedActionClusters", "suggestedMeasureClusters", "suggestedObstacleClusters", "suggestedOvercomeClusters", "goal", "affirmation", "actionSteps", "milestones", "successIndicator", "obstacles"]
         }
     });
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      console.error("Failed to parse AI response", e);
-      const fallbackMsg = AI_FALLBACK_MESSAGE;
-      return {
-        suggestedGoals: [fallbackMsg, fallbackMsg, fallbackMsg, fallbackMsg],
-        suggestedAffirmations: [fallbackMsg, fallbackMsg, fallbackMsg, fallbackMsg],
-        suggestedActionClusters: [[], [], [], []],
-        suggestedMeasureClusters: [[], [], [], []],
-        suggestedObstacleClusters: [[], [], [], []],
-        suggestedOvercomeClusters: [[], [], [], []],
-        goal: fallbackMsg,
-        affirmation: fallbackMsg,
-        actionSteps: [],
-        milestones: [],
-        successIndicator: fallbackMsg,
-        obstacles: []
-      };
-    }
+    return parseRequiredJson<any>(response.text, "DREAM details");
   },
 
   async suggestDomainStrategy(domainName: string, domainGoal: string) {
@@ -903,11 +922,6 @@ Return the result as a JSON object.`;
         }
     });
 
-    try {
-      return JSON.parse(response.text);
-    } catch (e) {
-      console.error("Failed to parse domain strategy", e);
-      return { subDomains: [], affirmations: [] };
-    }
+    return parseRequiredJson<{ subDomains: any[]; affirmations: string[] }>(response.text, "domain strategy");
   }
 };

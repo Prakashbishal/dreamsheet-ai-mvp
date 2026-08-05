@@ -228,7 +228,20 @@ export default function App() {
     return defaultValue;
   };
 
-  const [step, setStep] = useState<CoachingStep>(() => getInitialState('step', CoachingStep.WELCOME));
+  const getInitialSessionState = (key: string, defaultValue: any) => {
+    try {
+      const saved = sessionStorage.getItem('dreamsheet_session_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed[key] !== undefined) return parsed[key];
+      }
+    } catch (error) {
+      console.error(`Error loading session state for ${key}`, error);
+    }
+    return defaultValue;
+  };
+
+  const [step, setStep] = useState<CoachingStep>(() => getInitialSessionState('step', CoachingStep.WELCOME));
   const stepRef = useRef(step);
   stepRef.current = step;
   const [domains, setDomains] = useState<Domain[]>(() => getInitialState('domains', []));
@@ -256,9 +269,9 @@ export default function App() {
   }, [showNameCapture, clientName, coachName]);
   
   // Quiz State
-  const [showQuiz, setShowQuiz] = useState(() => getInitialState('showQuiz', false));
+  const [showQuiz, setShowQuiz] = useState(() => getInitialSessionState('showQuiz', false));
   const [currentQuizIndex, setCurrentQuizIndex] = useState(() => {
-    const saved = getInitialState('currentQuizIndex', 0);
+    const saved = getInitialSessionState('currentQuizIndex', 0);
     return saved < DISCOVERY_QUIZ_QUESTIONS.length ? saved : 0;
   });
   
@@ -284,13 +297,13 @@ export default function App() {
   };
 
   const [quizResponses, setQuizResponses] = useState<QuizState[]>(getInitialQuizResponses);
-  const [quizPhase, setQuizPhase] = useState<'intro' | 'input' | 'analysis' | 'rating'>(() => getInitialState('quizPhase', 'intro'));
+  const [quizPhase, setQuizPhase] = useState<'intro' | 'input' | 'analysis' | 'rating'>(() => getInitialSessionState('quizPhase', 'intro'));
   
   // Plan Context
   const [timeHorizon, setTimeHorizon] = useState(() => getInitialState('timeHorizon', '12 months'));
   const [selectedRoles, setSelectedRoles] = useState<string[]>(() => getInitialState('selectedRoles', []));
   const [lastSelectedDomain, setLastSelectedDomain] = useState<string | null>(() => getInitialState('lastSelectedDomain', null));
-  const [showDomainVisionResults, setShowDomainVisionResults] = useState(() => getInitialState('showDomainVisionResults', false));
+  const [showDomainVisionResults, setShowDomainVisionResults] = useState(() => getInitialSessionState('showDomainVisionResults', false));
   const [isGeneratingDomainVision, setIsGeneratingDomainVision] = useState(false);
 
   // Discovery State
@@ -317,7 +330,7 @@ export default function App() {
       return item;
     });
   });
-  const [currentDiscoveryIndex, setCurrentDiscoveryIndex] = useState(() => getInitialState('currentDiscoveryIndex', 0));
+  const [currentDiscoveryIndex, setCurrentDiscoveryIndex] = useState(() => getInitialSessionState('currentDiscoveryIndex', 0));
 
   // Intro / Mindfulness State
   const [distractions, setDistractions] = useState<string[]>(() => getInitialState('distractions', []));
@@ -327,7 +340,7 @@ export default function App() {
   const [planCreatedAt, setPlanCreatedAt] = useState(() => getInitialState('planCreatedAt', new Date().toISOString()));
   const [isCoachMode, setIsCoachMode] = useState(() => getInitialState('isCoachMode', false));
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [showStepList, setShowStepList] = useState(() => getInitialState('showStepList', false));
+  const [showStepList, setShowStepList] = useState(false);
   const [showDomainInstructions, setShowDomainInstructions] = useState(false);
   const [logoFailed, setLogoFailed] = useState(false);
   const appShellRef = useRef<HTMLDivElement>(null);
@@ -370,6 +383,7 @@ export default function App() {
   const [isGeneratingGoalAffirmations, setIsGeneratingGoalAffirmations] = useState(false);
   const [isGeneratingSupportingGoals, setIsGeneratingSupportingGoals] = useState(false);
   const [isGeneratingActionSteps, setIsGeneratingActionSteps] = useState(false);
+  const actionStepGenerationRef = useRef(new Set<string>());
   const [isPreparingTacticalRoadmap, setIsPreparingTacticalRoadmap] = useState(false);
   const [expandedSubAreas, setExpandedSubAreas] = useState<Record<string, boolean>>({});
   const [showConsolidatedDetails, setShowConsolidatedDetails] = useState(false);
@@ -692,7 +706,6 @@ export default function App() {
   // Persistence
   useEffect(() => {
     const state = {
-      step,
       domains,
       clientName,
       coachName,
@@ -704,15 +717,9 @@ export default function App() {
       customDiscoveryDomains,
       planNotes,
       quizResponses,
-      quizPhase,
-      currentQuizIndex,
-      currentDiscoveryIndex,
       distractions,
       planCreatedAt,
       isCoachMode,
-      showQuiz,
-      showStepList,
-      showDomainVisionResults,
       suggestedDomains,
       completedDomainIds,
       showNameCapture
@@ -724,7 +731,24 @@ export default function App() {
       console.error('Could not save progress locally', error);
       setLocalSaveStatus('error');
     }
-  }, [step, domains, clientName, coachName, timeHorizon, selectedRoles, lastSelectedDomain, discoveryResponses, activeDomainId, customDiscoveryDomains, planNotes, quizResponses, quizPhase, currentQuizIndex, currentDiscoveryIndex, distractions, planCreatedAt, isCoachMode, showQuiz, showStepList, showDomainVisionResults, suggestedDomains, completedDomainIds, showNameCapture]);
+  }, [domains, clientName, coachName, timeHorizon, selectedRoles, lastSelectedDomain, discoveryResponses, activeDomainId, customDiscoveryDomains, planNotes, quizResponses, distractions, planCreatedAt, isCoachMode, suggestedDomains, completedDomainIds, showNameCapture]);
+
+  useEffect(() => {
+    const sessionState = {
+      step,
+      showQuiz,
+      quizPhase,
+      currentQuizIndex,
+      currentDiscoveryIndex,
+      showDomainVisionResults
+    };
+
+    try {
+      sessionStorage.setItem('dreamsheet_session_state', JSON.stringify(sessionState));
+    } catch (error) {
+      console.error('Could not save DREAMsheet session position', error);
+    }
+  }, [step, showQuiz, quizPhase, currentQuizIndex, currentDiscoveryIndex, showDomainVisionResults]);
 
   // Scroll to top on entering vision/sub-domain view
   useEffect(() => {
@@ -774,6 +798,7 @@ export default function App() {
     setSaveReminderMessage('');
     setSubmissionSaveMessage('');
     localStorage.removeItem('coaching_plan_state');
+    sessionStorage.removeItem('dreamsheet_session_state');
   };
 
   // Domain Selection
@@ -1074,11 +1099,15 @@ export default function App() {
   };
 
   const generateActionStepsForSubArea = async (domainId: string, subAreaId: string) => {
+    const requestKey = `${domainId}:${subAreaId}`;
+    if (actionStepGenerationRef.current.has(requestKey)) return;
+
     const domain = domains.find(d => d.id === domainId);
     if (!domain) return;
     const subArea = domain.subAreas.find(s => s.id === subAreaId);
     if (!subArea || !subArea.goal) return;
 
+    actionStepGenerationRef.current.add(requestKey);
     setIsGeneratingActionSteps(true);
     try {
       const steps = await coachingService.suggestActionStepsForGoal(subArea.goal, domain.name);
@@ -1108,7 +1137,10 @@ export default function App() {
       console.error("Error generating action steps:", error);
       showAiError(error, "Your existing action steps are unchanged, and you can add steps manually or continue.");
     } finally {
-      setIsGeneratingActionSteps(false);
+      actionStepGenerationRef.current.delete(requestKey);
+      if (actionStepGenerationRef.current.size === 0) {
+        setIsGeneratingActionSteps(false);
+      }
     }
   };
 
