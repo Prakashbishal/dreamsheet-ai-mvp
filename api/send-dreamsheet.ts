@@ -13,6 +13,13 @@ function json(status: number, body: { ok: boolean; error?: string }): Response {
   return Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
+function methodNotAllowed(): Response {
+  return Response.json(
+    { ok: false, error: 'METHOD_NOT_ALLOWED' },
+    { status: 405, headers: { Allow: 'POST', 'Cache-Control': 'no-store' } },
+  );
+}
+
 function trimField(entry: FormDataEntryValue | null, maxLength: number): string | null {
   if (typeof entry !== 'string') return null;
   const value = entry.trim();
@@ -57,59 +64,65 @@ function safeFilename(name: string): string {
   return `DREAMsheet-Strategic-Plan-${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`;
 }
 
-export default async function handler(request: Request): Promise<Response> {
-  if (request.method !== 'POST') return json(405, { ok: false, error: 'METHOD_NOT_ALLOWED' });
-  if (!isAllowedOrigin(request.headers.get('origin'))) return json(403, { ok: false, error: 'FORBIDDEN' });
-  if (!process.env.RESEND_API_KEY) return json(500, { ok: false, error: 'SEND_FAILED' });
+export default {
+  async fetch(request: Request): Promise<Response> {
+    if (request.method !== 'POST') return methodNotAllowed();
+    if (!isAllowedOrigin(request.headers.get('origin'))) return json(403, { ok: false, error: 'FORBIDDEN' });
+    if (!process.env.RESEND_API_KEY) return json(500, { ok: false, error: 'SEND_FAILED' });
 
-  let formData: FormData;
-  try {
-    formData = await request.formData();
-  } catch {
-    return json(400, { ok: false, error: 'INVALID_REQUEST' });
-  }
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    }
 
-  for (const key of formData.keys()) {
-    if (!ALLOWED_FIELDS.has(key)) return json(400, { ok: false, error: 'INVALID_REQUEST' });
-  }
-  if ([...ALLOWED_FIELDS].some((key) => formData.getAll(key).length !== 1)) {
-    return json(400, { ok: false, error: 'INVALID_REQUEST' });
-  }
+    for (const key of formData.keys()) {
+      if (!ALLOWED_FIELDS.has(key)) return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    }
+    if ([...ALLOWED_FIELDS].some((key) => formData.getAll(key).length !== 1)) {
+      return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    }
 
-  const recipientEmail = trimField(formData.get('recipientEmail'), 254);
-  const coacheeName = trimField(formData.get('coacheeName'), 120);
-  const coachName = trimField(formData.get('coachName'), 120);
-  const requestId = trimField(formData.get('requestId'), 64);
-  const pdf = formData.get('pdf');
-  if (!recipientEmail || !EMAIL_PATTERN.test(recipientEmail) || coacheeName === null || coachName === null || !requestId || !UUID_PATTERN.test(requestId) || !(pdf instanceof File)) {
-    return json(400, { ok: false, error: 'INVALID_REQUEST' });
-  }
-  if (!pdf.size) return json(400, { ok: false, error: 'INVALID_REQUEST' });
-  if (pdf.size > MAX_PDF_BYTES) return json(413, { ok: false, error: 'PDF_TOO_LARGE' });
-  if (pdf.type && pdf.type.toLowerCase() !== 'application/pdf') return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    const recipientEmail = trimField(formData.get('recipientEmail'), 254);
+    const coacheeName = trimField(formData.get('coacheeName'), 120);
+    const coachName = trimField(formData.get('coachName'), 120);
+    const requestId = trimField(formData.get('requestId'), 64);
+    const pdf = formData.get('pdf');
+    if (!recipientEmail || !EMAIL_PATTERN.test(recipientEmail) || coacheeName === null || coachName === null || !requestId || !UUID_PATTERN.test(requestId) || !(pdf instanceof File)) {
+      return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    }
+    if (!pdf.size) return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    if (pdf.size > MAX_PDF_BYTES) return json(413, { ok: false, error: 'PDF_TOO_LARGE' });
+    if (pdf.type && pdf.type.toLowerCase() !== 'application/pdf') return json(400, { ok: false, error: 'INVALID_REQUEST' });
 
-  const arrayBuffer = await pdf.arrayBuffer();
-  const pdfBuffer = Buffer.from(arrayBuffer);
-  if (pdfBuffer.subarray(0, 5).toString('ascii') !== '%PDF-') return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    let pdfBuffer: Buffer;
+    try {
+      pdfBuffer = Buffer.from(await pdf.arrayBuffer());
+    } catch {
+      return json(400, { ok: false, error: 'INVALID_REQUEST' });
+    }
+    if (pdfBuffer.subarray(0, 5).toString('ascii') !== '%PDF-') return json(400, { ok: false, error: 'INVALID_REQUEST' });
 
-  const greetingName = coacheeName || 'there';
-  const text = `Hi ${greetingName},\n\nYour completed DREAMsheet Strategic Plan is attached as a PDF.\n\nKeep it accessible and review your goals, priorities and next actions regularly.\n\nBest wishes,\nDREAMsheet AI\n\nThis email was requested through DREAMsheet AI.`;
-  const htmlName = escapeHtml(greetingName);
-  const html = `<!doctype html><html><body style="margin:0;background:#f5f5f4;color:#292524;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;padding:32px 20px"><div style="background:#fff;border-top:4px solid #059669;border-radius:8px;padding:28px"><p style="margin:0 0 20px;color:#059669;font-size:12px;font-weight:700;letter-spacing:.16em">DREAMsheet AI</p><p>Hi ${htmlName},</p><p>Your completed DREAMsheet Strategic Plan is attached as a PDF.</p><p>Keep it accessible and review your goals, priorities and next actions regularly.</p><p style="margin-top:24px">Best wishes,<br>DREAMsheet AI</p><hr style="margin:28px 0 16px;border:0;border-top:1px solid #e7e5e4"><p style="margin:0;color:#78716c;font-size:12px">This email was requested through DREAMsheet AI.</p></div></div></body></html>`;
+    const greetingName = coacheeName || 'there';
+    const text = `Hi ${greetingName},\n\nYour completed DREAMsheet Strategic Plan is attached as a PDF.\n\nKeep it accessible and review your goals, priorities and next actions regularly.\n\nBest wishes,\nDREAMsheet AI\n\nThis email was requested through DREAMsheet AI.`;
+    const htmlName = escapeHtml(greetingName);
+    const html = `<!doctype html><html><body style="margin:0;background:#f5f5f4;color:#292524;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;padding:32px 20px"><div style="background:#fff;border-top:4px solid #059669;border-radius:8px;padding:28px"><p style="margin:0 0 20px;color:#059669;font-size:12px;font-weight:700;letter-spacing:.16em">DREAMsheet AI</p><p>Hi ${htmlName},</p><p>Your completed DREAMsheet Strategic Plan is attached as a PDF.</p><p>Keep it accessible and review your goals, priorities and next actions regularly.</p><p style="margin-top:24px">Best wishes,<br>DREAMsheet AI</p><hr style="margin:28px 0 16px;border:0;border-top:1px solid #e7e5e4"><p style="margin:0;color:#78716c;font-size:12px">This email was requested through DREAMsheet AI.</p></div></div></body></html>`;
 
-  try {
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    const result = await resend.emails.send({
-      from: FIXED_SENDER,
-      to: recipientEmail,
-      subject: FIXED_SUBJECT,
-      text,
-      html,
-      attachments: [{ content: pdfBuffer, filename: safeFilename(coacheeName), contentType: 'application/pdf' }],
-    }, { idempotencyKey: `dreamsheet-${requestId}` });
-    if (result.error || !result.data?.id) return json(502, { ok: false, error: 'SEND_FAILED' });
-    return json(200, { ok: true });
-  } catch {
-    return json(502, { ok: false, error: 'SEND_FAILED' });
-  }
-}
+    try {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const result = await resend.emails.send({
+        from: FIXED_SENDER,
+        to: recipientEmail,
+        subject: FIXED_SUBJECT,
+        text,
+        html,
+        attachments: [{ content: pdfBuffer, filename: safeFilename(coacheeName), contentType: 'application/pdf' }],
+      }, { idempotencyKey: `dreamsheet-${requestId}` });
+      if (result.error || !result.data?.id) return json(502, { ok: false, error: 'SEND_FAILED' });
+      return json(200, { ok: true });
+    } catch {
+      return json(502, { ok: false, error: 'SEND_FAILED' });
+    }
+  },
+};
