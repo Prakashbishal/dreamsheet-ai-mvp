@@ -17,6 +17,7 @@ import {
   Activity,
   LineChart,
   Download,
+  Mail,
   LayoutDashboard,
   ListTodo,
   User,
@@ -40,6 +41,7 @@ import { CoachingStep, Domain, SubArea, CoachingPlan, ActionStep } from './types
 import { coachingService, getAiGenerationMessage, hasGeminiApiKey } from './services/coachingService';
 import { cn } from './lib/utils';
 import { WaterfallRoadmap } from './components/WaterfallRoadmap';
+import { PrintableDreamSheet } from './components/PrintableDreamSheet';
 
 const POSSIBLE_DOMAINS = [
   { name: "CAREER & BUSINESS", description: "Professional growth, vocational goals and fulfilling work" },
@@ -248,6 +250,12 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [clientName, setClientName] = useState(() => getInitialState('clientName', ''));
   const [coachName, setCoachName] = useState(() => getInitialState('coachName', ''));
+  const [hasCurrentSessionIdentity, setHasCurrentSessionIdentity] = useState(() =>
+    getInitialSessionState(
+      'hasCurrentSessionIdentity',
+      getInitialSessionState('step', CoachingStep.WELCOME) !== CoachingStep.WELCOME
+    )
+  );
   const [planNotes, setPlanNotes] = useState(() => getInitialState('planNotes', ""));
   
   const [showNameCapture, setShowNameCapture] = useState(() => {
@@ -440,12 +448,19 @@ export default function App() {
   const [newFocusAreaName, setNewFocusAreaName] = useState('');
   const [activeExplanation, setActiveExplanation] = useState<string | null>(null);
   const planRef = useRef<HTMLDivElement>(null);
+  const printableDreamSheetRef = useRef<HTMLDivElement>(null);
+  const emailRequestIdRef = useRef<string | null>(null);
 
   const [isSavingSubmission, setIsSavingSubmission] = useState(false);
   const [submissionSaveMessage, setSubmissionSaveMessage] = useState('');
   const [hasSavedDreamSheet, setHasSavedDreamSheet] = useState(false);
   const [saveReminderMessage, setSaveReminderMessage] = useState('');
   const [localSaveStatus, setLocalSaveStatus] = useState<'saved' | 'error'>('saved');
+  const [pdfAction, setPdfAction] = useState<'download' | 'email' | null>(null);
+  const [emailRecipient, setEmailRecipient] = useState('');
+  const [emailStatus, setEmailStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [emailPhase, setEmailPhase] = useState<'creating' | 'sending' | null>(null);
+  const [pdfError, setPdfError] = useState('');
 
   const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
 
@@ -521,11 +536,76 @@ export default function App() {
     return "If this obstacle appears, use the listed overcome strategy and adjust the timeline or task scope.";
   };
 
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
+    if (pdfAction) return;
     if (!hasSavedDreamSheet) {
       setSaveReminderMessage("Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.");
     }
-    window.print();
+    setPdfAction('download');
+    setPdfError('');
+    try {
+      if (!printableDreamSheetRef.current) throw new Error('Printable DREAMsheet unavailable');
+      const { createDreamSheetFilename, generateDreamSheetPdf } = await import('./services/pdfService');
+      const pdf = await generateDreamSheetPdf(printableDreamSheetRef.current);
+      const objectUrl = URL.createObjectURL(pdf);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = createDreamSheetFilename(clientName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+    } catch (error) {
+      if (import.meta.env.DEV) console.error('PDF creation failed:', error instanceof Error ? error.message : 'Unknown error');
+      setPdfError("We couldn't create your PDF right now. Please try again in a moment.");
+    } finally {
+      setPdfAction(null);
+    }
+  };
+
+  const handleEmailDreamSheet = async () => {
+    if (pdfAction) return;
+    const recipient = emailRecipient.trim();
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(recipient)) {
+      setEmailStatus({ type: 'error', message: 'Please enter a valid email address.' });
+      return;
+    }
+
+    const requestId = emailRequestIdRef.current || crypto.randomUUID();
+    emailRequestIdRef.current = requestId;
+    setPdfAction('email');
+    setEmailPhase('creating');
+    setEmailStatus(null);
+    setPdfError('');
+    try {
+      if (!printableDreamSheetRef.current) throw new Error('Printable DREAMsheet unavailable');
+      const [{ createDreamSheetFilename, generateDreamSheetPdf, MAX_EMAIL_PDF_BYTES }, { sendDreamSheetEmail }] = await Promise.all([
+        import('./services/pdfService'),
+        import('./services/emailService'),
+      ]);
+      const pdf = await generateDreamSheetPdf(printableDreamSheetRef.current);
+      if (pdf.size > MAX_EMAIL_PDF_BYTES) {
+        setEmailStatus({ type: 'error', message: 'This plan is too large to email. Please download the PDF instead.' });
+        return;
+      }
+      setEmailPhase('sending');
+      await sendDreamSheetEmail({
+        recipientEmail: recipient,
+        coacheeName: clientName,
+        coachName,
+        requestId,
+        pdf,
+        filename: createDreamSheetFilename(clientName),
+      });
+      setEmailStatus({ type: 'success', message: 'Your DREAMsheet has been sent successfully.' });
+      emailRequestIdRef.current = null;
+    } catch (error) {
+      if (import.meta.env.DEV) console.error('DREAMsheet email failed:', error instanceof Error ? error.message : 'Unknown error');
+      setEmailStatus({ type: 'error', message: "We couldn't send your DREAMsheet right now. Please try again in a moment." });
+    } finally {
+      setPdfAction(null);
+      setEmailPhase(null);
+    }
   };
 
   const handleSaveDreamSheet = async () => {
@@ -740,7 +820,8 @@ export default function App() {
       quizPhase,
       currentQuizIndex,
       currentDiscoveryIndex,
-      showDomainVisionResults
+      showDomainVisionResults,
+      hasCurrentSessionIdentity
     };
 
     try {
@@ -748,7 +829,7 @@ export default function App() {
     } catch (error) {
       console.error('Could not save DREAMsheet session position', error);
     }
-  }, [step, showQuiz, quizPhase, currentQuizIndex, currentDiscoveryIndex, showDomainVisionResults]);
+  }, [step, showQuiz, quizPhase, currentQuizIndex, currentDiscoveryIndex, showDomainVisionResults, hasCurrentSessionIdentity]);
 
   // Scroll to top on entering vision/sub-domain view
   useEffect(() => {
@@ -797,6 +878,7 @@ export default function App() {
     setHasSavedDreamSheet(false);
     setSaveReminderMessage('');
     setSubmissionSaveMessage('');
+    setHasCurrentSessionIdentity(false);
     localStorage.removeItem('coaching_plan_state');
     sessionStorage.removeItem('dreamsheet_session_state');
   };
@@ -2198,11 +2280,11 @@ export default function App() {
               >
                 <div className="flex flex-col items-end">
                   <span className="text-[8px] font-bold text-[#888888] tracking-widest uppercase group-hover/meta:text-emerald-400 transition-colors">COACHEE</span>
-                  <span className="text-xs font-semibold text-white tracking-tight">{clientName || "Guest Coachee"}</span>
+                  <span className="text-xs font-semibold text-white tracking-tight">{hasCurrentSessionIdentity ? (clientName || "Guest Coachee") : "—"}</span>
                 </div>
                 <div className="flex flex-col items-end border-l border-white/10 pl-6">
                   <span className="text-[8px] font-bold text-[#888888] tracking-widest uppercase group-hover/meta:text-emerald-400 transition-colors">COACH</span>
-                  <span className="text-xs font-semibold text-white tracking-tight">{coachName || "AI Coach"}</span>
+                  <span className="text-xs font-semibold text-white tracking-tight">{hasCurrentSessionIdentity ? (coachName || "AI Coach") : "—"}</span>
                 </div>
                 <div className="flex flex-col items-end border-l border-white/10 pl-6">
                   <span className="text-[8px] font-bold text-[#888888] tracking-widest uppercase">DATE</span>
@@ -4491,8 +4573,38 @@ export default function App() {
                   >
                     <ChevronLeft size={18} /> Back to Workshop
                   </button>
-                  <div className="w-full md:w-auto rounded-xl border border-stone-200 bg-stone-100 px-6 md:px-8 py-3.5 text-center text-xs md:text-sm font-bold text-stone-500" title="Direct email delivery requires a production email service and is not enabled.">
-                    Email unavailable — download the PDF to share
+                  <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+                    <label htmlFor="dreamsheet-email" className="mb-2 block text-left text-[10px] font-bold uppercase tracking-widest text-stone-500">Email your DREAMsheet</label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        id="dreamsheet-email"
+                        type="email"
+                        value={emailRecipient}
+                        onChange={(event) => {
+                          setEmailRecipient(event.target.value);
+                          emailRequestIdRef.current = null;
+                          if (emailStatus) setEmailStatus(null);
+                        }}
+                        disabled={pdfAction !== null}
+                        autoComplete="email"
+                        placeholder="you@example.com"
+                        className="min-w-0 flex-1 rounded-xl border border-stone-200 px-4 py-3 text-sm text-stone-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 disabled:bg-stone-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleEmailDreamSheet}
+                        disabled={pdfAction !== null || !emailRecipient.trim()}
+                        className="rounded-xl bg-stone-900 px-5 py-3 text-xs font-bold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
+                      >
+                        <Mail size={16} />
+                        {emailPhase === 'creating' ? 'Creating PDF…' : emailPhase === 'sending' ? 'Sending…' : 'Email Strategic PDF'}
+                      </button>
+                    </div>
+                    {emailStatus && (
+                      <p className={cn('mt-3 text-left text-xs font-semibold', emailStatus.type === 'success' ? 'text-emerald-700' : 'text-red-700')} role={emailStatus.type === 'error' ? 'alert' : 'status'} aria-live="polite">
+                        {emailStatus.message}
+                      </p>
+                    )}
                   </div>
                   <button 
                     onClick={handleSaveDreamSheet}
@@ -4503,9 +4615,10 @@ export default function App() {
                   </button>
                   <button 
                     onClick={handleExportPDF}
-                    className="bg-emerald-600 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-3 w-full md:w-auto"
+                    disabled={pdfAction !== null}
+                    className="bg-emerald-600 text-white px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-3 w-full md:w-auto disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <Download size={18} /> Download Strategic PDF
+                    <Download size={18} /> {pdfAction === 'download' ? 'Creating PDF…' : 'Download Strategic PDF'}
                   </button>
                   <button 
                     onClick={() => {
@@ -4526,6 +4639,11 @@ export default function App() {
                   {submissionSaveMessage && (
                     <p className="w-full text-center text-xs md:text-sm font-semibold text-stone-600" aria-live="polite">
                       {submissionSaveMessage}
+                    </p>
+                  )}
+                  {pdfError && (
+                    <p className="w-full text-center text-xs md:text-sm font-semibold text-red-700" role="alert" aria-live="polite">
+                      {pdfError}
                     </p>
                   )}
                   </div>
@@ -4911,6 +5029,7 @@ export default function App() {
                     onClick={() => {
                       setClientName(tempClientName.trim() || "");
                       setCoachName(tempCoachName.trim() || "");
+                      setHasCurrentSessionIdentity(true);
                       setShowNameCapture(false);
                     }}
                     className="w-full py-3.5 px-6 rounded-xl bg-emerald-600 text-white text-xs md:text-sm font-bold uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-600/10 flex items-center justify-center gap-2 group cursor-pointer animate-none"
@@ -4924,6 +5043,27 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <div
+        aria-hidden="true"
+        style={{
+          left: '-10000px',
+          pointerEvents: 'none',
+          position: 'fixed',
+          top: 0,
+          width: 794,
+          zIndex: -1,
+        }}
+      >
+        <PrintableDreamSheet
+          ref={printableDreamSheetRef}
+          domains={currentSessionDomains}
+          clientName={clientName}
+          coachName={coachName}
+          issuedDate={new Date().toLocaleDateString('en-GB')}
+          planNotes={planNotes}
+        />
+      </div>
 
     </div>
   );
