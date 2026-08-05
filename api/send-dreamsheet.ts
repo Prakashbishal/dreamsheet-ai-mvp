@@ -64,8 +64,7 @@ function safeFilename(name: string): string {
   return `DREAMsheet-Strategic-Plan-${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`;
 }
 
-export default {
-  async fetch(request: Request): Promise<Response> {
+async function handleRequest(request: Request): Promise<Response> {
     if (request.method !== 'POST') return methodNotAllowed();
     if (!isAllowedOrigin(request.headers.get('origin'))) return json(403, { ok: false, error: 'FORBIDDEN' });
     if (!process.env.RESEND_API_KEY) return json(500, { ok: false, error: 'SEND_FAILED' });
@@ -124,5 +123,8 @@ export default {
     } catch {
       return json(502, { ok: false, error: 'SEND_FAILED' });
     }
-  },
+}
+
+export default {
+  fetch: handleRequest,
 };
