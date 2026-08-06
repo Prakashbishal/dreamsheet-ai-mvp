@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { Resend } from 'resend';
-import { sendAdminAlert } from './_lib/adminAlert';
+import { sendAdminAlert } from './_lib/adminAlert.js';
 
 const MAX_PDF_BYTES = 3 * 1024 * 1024;
 const FIXED_SENDER = 'DREAMsheet AI <no-reply@dreamsheet.ai>';

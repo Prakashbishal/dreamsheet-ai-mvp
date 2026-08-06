@@ -1,5 +1,5 @@
-import { isAdminAlertType } from './_lib/adminAlertTypes';
-import { sendAdminAlert } from './_lib/adminAlert';
+import { isAdminAlertType } from './_lib/adminAlertTypes.js';
+import { sendAdminAlert } from './_lib/adminAlert.js';
 
 const PRODUCTION_ORIGIN = 'https://dreamsheet.ai';
 
