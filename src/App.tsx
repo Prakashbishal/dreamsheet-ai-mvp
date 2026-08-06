@@ -42,6 +42,7 @@ import { coachingService, getAiGenerationMessage, hasGeminiApiKey } from './serv
 import { cn } from './lib/utils';
 import { WaterfallRoadmap } from './components/WaterfallRoadmap';
 import { PrintableDreamSheet } from './components/PrintableDreamSheet';
+import { recordCriticalFailure, recordCriticalSuccess } from './services/adminAlertService';
 
 const POSSIBLE_DOMAINS = [
   { name: "CAREER & BUSINESS", description: "Professional growth, vocational goals and fulfilling work" },
@@ -647,9 +648,11 @@ export default function App() {
       setSubmissionSaveMessage('DREAMsheet saved successfully.');
       setSaveReminderMessage('');
       setHasSavedDreamSheet(true);
+      recordCriticalSuccess('SUPABASE_SAVE_FAILED');
     } catch (error) {
       console.error("Could not save DREAMsheet submission:", error);
       setSubmissionSaveMessage('Could not save DREAMsheet. Check your connection and select Save DREAMsheet to retry. You can also download the PDF as a backup.');
+      recordCriticalFailure('SUPABASE_SAVE_FAILED');
     } finally {
       setIsSavingSubmission(false);
     }
