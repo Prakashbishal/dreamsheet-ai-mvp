@@ -1,4 +1,4 @@
-import { isAdminAlertType } from '../src/types/adminAlerts';
+import { isAdminAlertType } from './_lib/adminAlertTypes';
 import { sendAdminAlert } from './_lib/adminAlert';
 
 const PRODUCTION_ORIGIN = 'https://dreamsheet.ai';

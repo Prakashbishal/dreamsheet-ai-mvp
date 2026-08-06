@@ -1,5 +1,5 @@
 import { Resend } from 'resend';
-import { ADMIN_ALERT_DEFINITIONS, type AdminAlertType } from '../../src/types/adminAlerts';
+import { ADMIN_ALERT_DEFINITIONS, type AdminAlertType } from './adminAlertTypes';
 
 const ALERT_SENDER = 'DREAMsheet Alerts <no-reply@dreamsheet.ai>';
 const EMAIL_PATTERN = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
