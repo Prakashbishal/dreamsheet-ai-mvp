@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type, type GenerateContentConfig, type GenerateContentResponse } from "@google/genai";
+import { recordCriticalFailure, recordCriticalSuccess } from './adminAlertService';
 
 const geminiApiKey = process.env.GEMINI_API_KEY || '';
 export const hasGeminiApiKey = Boolean(geminiApiKey);
@@ -120,7 +121,7 @@ const sanitizeConfig = (config?: GenerateContentConfig) => {
   return sanitizedConfig;
 };
 
-const generateWithFallback = async (
+const performGenerateWithFallback = async (
   contents: string,
   config?: GenerateContentConfig
 ): Promise<GenerateContentResponse> => {
@@ -168,6 +169,20 @@ const generateWithFallback = async (
   }
 
   throw new AiGenerationError("generic", AI_FALLBACK_MESSAGE, lastError);
+};
+
+const generateWithFallback = async (
+  contents: string,
+  config?: GenerateContentConfig
+): Promise<GenerateContentResponse> => {
+  try {
+    const response = await performGenerateWithFallback(contents, config);
+    recordCriticalSuccess('GEMINI_REQUEST_FAILED');
+    return response;
+  } catch (error) {
+    recordCriticalFailure('GEMINI_REQUEST_FAILED');
+    throw error;
+  }
 };
 
 const extractJsonText = (text: string | undefined) => {

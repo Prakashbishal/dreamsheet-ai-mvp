@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { Resend } from 'resend';
+import { sendAdminAlert } from './_lib/adminAlert.js';
 
 const MAX_PDF_BYTES = 3 * 1024 * 1024;
 const FIXED_SENDER = 'DREAMsheet AI <no-reply@dreamsheet.ai>';
@@ -141,6 +142,7 @@ async function handleRequest(request: Request): Promise<Response> {
           'Resend send failed',
           getSafeErrorDetails(result.error),
         );
+        await sendAdminAlert('EMAIL_DELIVERY_FAILED');
 
         return json(502, {
           ok: false,
@@ -153,6 +155,7 @@ async function handleRequest(request: Request): Promise<Response> {
         'Resend send threw',
         getSafeErrorDetails(error),
       );
+      await sendAdminAlert('EMAIL_DELIVERY_FAILED');
 
       return json(502, {
         ok: false,
