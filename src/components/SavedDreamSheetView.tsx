@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Download, Mail } from 'lucide-react';
 import type { Domain } from '../types';
 import type { SavedDreamSheet } from '../services/submissionService';
+import { BrandMark } from './BrandMark';
 import { PrintableDreamSheet } from './PrintableDreamSheet';
 
 interface SavedDreamSheetViewProps {
@@ -98,9 +99,9 @@ export function SavedDreamSheetView({ submission, onBack, initialIntent = 'view'
       setEmailPhase('sending');
       await sendDreamSheetEmail({ recipientEmail: recipient, coacheeName: clientName, coachName, requestId, pdf, filename: createDreamSheetFilename(clientName) });
       requestIdRef.current = null;
-      setStatus({ type: 'success', message: 'Your DREAMsheet has been sent successfully.' });
+      setStatus({ type: 'success', message: 'Your DREAMSheet has been sent successfully.' });
     } catch {
-      setStatus({ type: 'error', message: "We couldn't send your DREAMsheet right now. Please try again in a moment." });
+      setStatus({ type: 'error', message: "We couldn't send your DREAMSheet right now. Please try again in a moment." });
     } finally {
       setAction(null);
       setEmailPhase(null);
@@ -115,30 +116,36 @@ export function SavedDreamSheetView({ submission, onBack, initialIntent = 'view'
   }, [initialIntent, domains.length]);
 
   return (
-    <main className="min-h-screen bg-stone-100 text-stone-900">
+    <main className="min-h-screen bg-[#F8F7F4] text-stone-900">
       <header className="sticky top-0 z-20 border-b border-white/10 bg-stone-950 px-4 py-4 text-white shadow-lg">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-400">DREAMsheet AI</p><h1 className="mt-1 text-xl font-semibold">Completed Strategic Plan</h1></div>
-          <button type="button" onClick={onBack} className="flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm font-bold hover:bg-white/10"><ArrowLeft size={17} /> Back to My DREAMsheets</button>
+          <div className="flex items-center gap-5">
+            <BrandMark tone="light" size="md" />
+            <div className="hidden border-l border-white/15 pl-5 sm:block">
+              <p className="text-[9px] font-bold uppercase tracking-[0.22em] text-emerald-400">Saved plan</p>
+              <h1 className="mt-1 text-lg font-semibold">Your DREAMSheet Strategic Plan</h1>
+            </div>
+          </div>
+          <button type="button" onClick={onBack} className="flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-2.5 text-sm font-bold outline-none transition hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-emerald-400"><ArrowLeft size={17} /> Back to My DREAMSheets</button>
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-4 py-7">
-        <div className="mb-6 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
+      <section className="mx-auto max-w-6xl px-4 py-7 sm:py-9">
+        <div className="mb-6 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-            <button type="button" onClick={handleDownload} disabled={action !== null || domains.length === 0} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"><Download size={17} /> {action === 'download' ? 'Creating PDF…' : 'Download PDF'}</button>
+            <button type="button" onClick={handleDownload} disabled={action !== null || domains.length === 0} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:opacity-60"><Download size={17} /> {action === 'download' ? 'Creating PDF…' : 'Download PDF'}</button>
             <label className="flex-1 text-xs font-bold uppercase tracking-wider text-stone-500">Email PDF
-              <input type="email" value={email} onChange={event => { setEmail(event.target.value); requestIdRef.current = null; setStatus(null); }} disabled={action !== null || domains.length === 0} autoFocus={initialIntent === 'email'} placeholder="you@example.com" className="mt-2 w-full rounded-xl border border-stone-200 px-4 py-3 text-sm font-normal normal-case tracking-normal outline-none focus:border-emerald-600" />
+              <input type="email" value={email} onChange={event => { setEmail(event.target.value); requestIdRef.current = null; setStatus(null); }} disabled={action !== null || domains.length === 0} autoFocus={initialIntent === 'email'} autoComplete="email" placeholder="you@example.com" className="mt-2 w-full rounded-xl border border-stone-200 bg-stone-50/50 px-4 py-3 text-sm font-normal normal-case tracking-normal outline-none transition focus:border-emerald-600 focus:bg-white focus:ring-4 focus:ring-emerald-500/10" />
             </label>
-            <button type="button" onClick={handleEmail} disabled={action !== null || domains.length === 0 || !email.trim()} className="flex items-center justify-center gap-2 rounded-xl bg-stone-900 px-5 py-3 text-sm font-bold text-white hover:bg-stone-800 disabled:opacity-60"><Mail size={17} /> {emailPhase === 'creating' ? 'Creating PDF…' : emailPhase === 'sending' ? 'Sending…' : 'Email PDF'}</button>
+            <button type="button" onClick={handleEmail} disabled={action !== null || domains.length === 0 || !email.trim()} className="flex items-center justify-center gap-2 rounded-xl bg-stone-900 px-5 py-3 text-sm font-bold text-white outline-none transition hover:bg-stone-800 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:opacity-60"><Mail size={17} /> {emailPhase === 'creating' ? 'Creating PDF…' : emailPhase === 'sending' ? 'Sending…' : 'Email PDF'}</button>
           </div>
-          {status && <p role={status.type === 'error' ? 'alert' : 'status'} aria-live="polite" className={`mt-3 text-sm font-semibold ${status.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>{status.message}</p>}
+          {status ? <p role={status.type === 'error' ? 'alert' : 'status'} aria-live="polite" className={`mt-3 text-sm font-semibold ${status.type === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>{status.message}</p> : null}
         </div>
 
         {domains.length === 0 ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900">This saved DREAMsheet does not contain readable completed-plan data.</div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900">This saved DREAMSheet does not contain readable completed-plan data.</div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl bg-white shadow-xl"><PrintableDreamSheet ref={printableRef} domains={domains} clientName={clientName} coachName={coachName} issuedDate={issuedDate} planNotes={plan.planNotes} /></div>
+          <div className="overflow-x-auto rounded-2xl border border-stone-200 bg-white shadow-[0_20px_55px_rgba(28,25,23,0.10)]"><PrintableDreamSheet ref={printableRef} domains={domains} clientName={clientName} coachName={coachName} issuedDate={issuedDate} planNotes={plan.planNotes} /></div>
         )}
       </section>
     </main>

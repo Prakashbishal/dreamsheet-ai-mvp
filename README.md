@@ -1,7 +1,7 @@
 
-# DreamSheet AI — Flourish Coaching Platform MVP
+# DREAMSheet AI — Flourish Coaching Platform MVP
 
-DreamSheet AI is a web-based coaching support platform built for the Flourish beta. The application helps users move through a structured coaching journey using the D.R.E.A.M. framework:
+DREAMSheet AI is a web-based coaching support platform built for the Flourish beta. The application helps users move through a structured coaching journey using the D.R.E.A.M. framework:
 
 - **D**omains
 - **R**atings
@@ -32,7 +32,7 @@ https://dreamsheet-ai-mvp.vercel.app/
 - End-goal and action planning flow
 - “Ongoing” option for open-ended goals/action steps
 - Improved mobile scrolling and layout handling
-- Flourish/DreamSheet header logo integration
+- Flourish/DREAMSheet header logo integration
 - AI loading and failure feedback
 - Local browser persistence using `localStorage`
 - Vercel deployment support
@@ -227,6 +227,6 @@ Then run:
 
 ```bash
 git add README.md
-git commit -m "Update README for DreamSheet AI MVP"
+git commit -m "Update README for DREAMSheet AI MVP"
 git push
 ````

@@ -3,8 +3,8 @@ import { Resend } from 'resend';
 import { sendAdminAlert } from './_lib/adminAlert.js';
 
 const MAX_PDF_BYTES = 3 * 1024 * 1024;
-const FIXED_SENDER = 'DREAMsheet AI <no-reply@dreamsheet.ai>';
-const FIXED_SUBJECT = 'Your DREAMsheet Strategic Plan';
+const FIXED_SENDER = 'DREAMSheet AI <no-reply@dreamsheet.ai>';
+const FIXED_SUBJECT = 'Your DREAMSheet Strategic Plan';
 const PRODUCTION_ORIGIN = 'https://dreamsheet-ai-mvp.vercel.app';
 const ALLOWED_FIELDS = new Set(['recipientEmail', 'coacheeName', 'coachName', 'requestId', 'pdf']);
 const EMAIL_PATTERN = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
@@ -80,7 +80,7 @@ function escapeHtml(value: string): string {
 
 function safeFilename(name: string): string {
   const safeName = name.normalize('NFKD').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'Coachee';
-  return `DREAMsheet-Strategic-Plan-${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`;
+  return `DREAMSheet-Strategic-Plan-${safeName}-${new Date().toISOString().slice(0, 10)}.pdf`;
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -123,9 +123,10 @@ async function handleRequest(request: Request): Promise<Response> {
     if (pdfBuffer.subarray(0, 5).toString('ascii') !== '%PDF-') return json(400, { ok: false, error: 'INVALID_REQUEST' });
 
     const greetingName = coacheeName || 'there';
-    const text = `Hi ${greetingName},\n\nYour completed DREAMsheet Strategic Plan is attached as a PDF.\n\nKeep it accessible and review your goals, priorities and next actions regularly.\n\nBest wishes,\nDREAMsheet AI\n\nThis email was requested through DREAMsheet AI.`;
+    const text = `Hi ${greetingName},\n\nYour completed DREAMSheet Strategic Plan is attached as a PDF.\n\nKeep it accessible and review your goals, priorities and next actions regularly.\n\nBest wishes,\nDREAMSheet AI\n\nThis email was requested through DREAMSheet AI.`;
     const htmlName = escapeHtml(greetingName);
-    const html = `<!doctype html><html><body style="margin:0;background:#f5f5f4;color:#292524;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;padding:32px 20px"><div style="background:#fff;border-top:4px solid #059669;border-radius:8px;padding:28px"><p style="margin:0 0 20px;color:#059669;font-size:12px;font-weight:700;letter-spacing:.16em">DREAMsheet AI</p><p>Hi ${htmlName},</p><p>Your completed DREAMsheet Strategic Plan is attached as a PDF.</p><p>Keep it accessible and review your goals, priorities and next actions regularly.</p><p style="margin-top:24px">Best wishes,<br>DREAMsheet AI</p><hr style="margin:28px 0 16px;border:0;border-top:1px solid #e7e5e4"><p style="margin:0;color:#78716c;font-size:12px">This email was requested through DREAMsheet AI.</p></div></div></body></html>`;
+    // TODO: Add the corrected production mark-only asset supplied by the brand owner.
+    const html = `<!doctype html><html><body style="margin:0;background:#f5f5f4;color:#292524;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;padding:32px 20px"><div style="overflow:hidden;background:#fff;border-top:4px solid #059669;border-radius:10px"><div style="background:#1c1917;padding:22px 28px"><p style="margin:0;color:#fff;font-size:24px;font-weight:400;letter-spacing:-.04em"><strong style="font-weight:700">DREAM</strong>Sheet <span style="color:#34d399;font-weight:400">AI</span></p></div><div style="padding:28px"><p style="margin:0 0 20px;color:#047857;font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase">Your Strategic Plan</p><p>Hi ${htmlName},</p><p>Your completed DREAMSheet Strategic Plan is attached as a PDF.</p><p>Keep it accessible and review your goals, priorities and next actions regularly.</p><p style="margin-top:24px">Best wishes,<br>DREAMSheet AI</p><hr style="margin:28px 0 16px;border:0;border-top:1px solid #e7e5e4"><p style="margin:0;color:#78716c;font-size:12px">This email was requested through DREAMSheet AI.</p></div></div></div></body></html>`;
 
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);

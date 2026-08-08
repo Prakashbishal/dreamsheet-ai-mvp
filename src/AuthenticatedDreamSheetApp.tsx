@@ -113,7 +113,7 @@ export default function AuthenticatedDreamSheetApp() {
     } catch (error) {
       if (requestId !== savedLoadRequestRef.current) return;
       setSavedDreamSheet(null);
-      setShellError(error instanceof Error ? error.message : 'This DREAMsheet could not be opened.');
+      setShellError(error instanceof Error ? error.message : 'This DREAMSheet could not be opened.');
       setView('dashboard');
       if (historyMode === 'restore') replaceShellHistoryState({ view: 'dashboard' });
     } finally {
@@ -227,7 +227,7 @@ export default function AuthenticatedDreamSheetApp() {
   };
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-stone-950 text-sm font-bold uppercase tracking-widest text-emerald-400">Loading DREAMsheet AI…</div>;
+    return <div className="flex min-h-screen items-center justify-center bg-stone-950 text-sm font-bold uppercase tracking-widest text-emerald-400">Loading DREAMSheet AI…</div>;
   }
   if (!user || passwordRecovery) return <AuthScreen />;
 
@@ -240,7 +240,7 @@ export default function AuthenticatedDreamSheetApp() {
       <>
         <App onSubmissionSaved={() => setDashboardRefreshToken(value => value + 1)} />
         <nav aria-label="Account navigation" className="fixed bottom-4 right-4 z-[10050] flex gap-2 rounded-2xl border border-stone-200 bg-white/95 p-2 shadow-2xl backdrop-blur">
-          <button type="button" onClick={returnToDashboard} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"><LayoutDashboard size={15} /> My DREAMsheets</button>
+          <button type="button" onClick={returnToDashboard} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"><LayoutDashboard size={15} /> My DREAMSheets</button>
           <button type="button" onClick={() => void handleLogout()} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"><LogOut size={15} /> Logout</button>
         </nav>
       </>
@@ -249,7 +249,7 @@ export default function AuthenticatedDreamSheetApp() {
 
   return (
     <>
-      {openingSaved && <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 text-sm font-bold text-white backdrop-blur-sm">Opening DREAMsheet…</div>}
+      {openingSaved && <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 text-sm font-bold text-white backdrop-blur-sm">Opening DREAMSheet…</div>}
       <DreamSheetDashboard
         userEmail={user.email || 'Signed-in user'}
         refreshToken={dashboardRefreshToken}

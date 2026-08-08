@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 import { ADMIN_ALERT_DEFINITIONS, type AdminAlertType } from './adminAlertTypes.js';
 
-const ALERT_SENDER = 'DREAMsheet Alerts <no-reply@dreamsheet.ai>';
+const ALERT_SENDER = 'DREAMSheet Alerts <no-reply@dreamsheet.ai>';
 const EMAIL_PATTERN = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
 
@@ -74,8 +74,9 @@ export async function sendAdminAlert(type: AdminAlertType, now = new Date()): Pr
   const windowStart = getAlertBucketStart(now);
   const windowEnd = new Date(windowStart.getTime() + FIFTEEN_MINUTES_MS);
   const alertWindow = `${formatUtc(windowStart)}–${formatUtc(windowEnd)}`;
-  const text = `DREAMsheet Production Alert\n\nA critical DREAMsheet component has repeatedly failed.\n\nComponent:\n${definition.component}\n\nEnvironment:\n${environment}\n\nFailure:\n${definition.failure}\n\nAlert window:\n${alertWindow}\n\nNo user DREAMsheet content or personal information is included in this alert.\n\nPlease check the Vercel and relevant service logs.\n\nDREAMsheet AI Monitoring`;
-  const html = `<!doctype html><html><body style="margin:0;background:#f5f5f4;color:#292524;font-family:Arial,sans-serif"><div style="max-width:600px;margin:0 auto;padding:32px 20px"><div style="background:#fff;border-top:4px solid #dc2626;border-radius:8px;padding:28px"><p style="color:#dc2626;font-size:12px;font-weight:700;letter-spacing:.14em">DREAMsheet Production Alert</p><p>A critical DREAMsheet component has repeatedly failed.</p><p><strong>Component:</strong><br>${definition.component}</p><p><strong>Environment:</strong><br>${environment}</p><p><strong>Failure:</strong><br>${definition.failure}</p><p><strong>Alert window:</strong><br>${alertWindow}</p><p>No user DREAMsheet content or personal information is included in this alert.</p><p>Please check the Vercel and relevant service logs.</p><p style="margin-top:24px;color:#78716c;font-size:12px">DREAMsheet AI Monitoring</p></div></div></body></html>`;
+  const text = `DREAMSheet Production Alert\n\nA critical DREAMSheet component has repeatedly failed.\n\nComponent:\n${definition.component}\n\nEnvironment:\n${environment}\n\nFailure:\n${definition.failure}\n\nAlert window:\n${alertWindow}\n\nNo user DREAMSheet content or personal information is included in this alert.\n\nPlease check the Vercel and relevant service logs.\n\nDREAMSheet AI Monitoring`;
+  // TODO: Add the corrected production mark-only asset supplied by the brand owner.
+  const html = `<!doctype html><html><body style="margin:0;background:#f5f5f4;color:#292524;font-family:Arial,sans-serif"><div style="max-width:600px;margin:0 auto;padding:32px 20px"><div style="overflow:hidden;background:#fff;border-top:4px solid #dc2626;border-radius:8px"><div style="background:#1c1917;padding:20px 28px"><p style="margin:0;color:#fff;font-size:22px;font-weight:400;letter-spacing:-.04em"><strong style="font-weight:700">DREAM</strong>Sheet <span style="color:#34d399;font-weight:400">AI</span></p></div><div style="padding:28px"><p style="color:#dc2626;font-size:12px;font-weight:700;letter-spacing:.14em">DREAMSheet Production Alert</p><p>A critical DREAMSheet component has repeatedly failed.</p><p><strong>Component:</strong><br>${definition.component}</p><p><strong>Environment:</strong><br>${environment}</p><p><strong>Failure:</strong><br>${definition.failure}</p><p><strong>Alert window:</strong><br>${alertWindow}</p><p>No user DREAMSheet content or personal information is included in this alert.</p><p>Please check the Vercel and relevant service logs.</p><p style="margin-top:24px;color:#78716c;font-size:12px">DREAMSheet AI Monitoring</p></div></div></div></body></html>`;
 
   try {
     const resend = new Resend(apiKey);

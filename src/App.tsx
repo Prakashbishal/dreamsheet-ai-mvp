@@ -41,6 +41,7 @@ import { CoachingStep, Domain, SubArea, CoachingPlan, ActionStep } from './types
 import { coachingService, getAiGenerationMessage, hasGeminiApiKey } from './services/coachingService';
 import { cn } from './lib/utils';
 import { WaterfallRoadmap } from './components/WaterfallRoadmap';
+import { BrandMark } from './components/BrandMark';
 import { PrintableDreamSheet } from './components/PrintableDreamSheet';
 import { recordCriticalFailure, recordCriticalSuccess } from './services/adminAlertService';
 
@@ -355,7 +356,6 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showStepList, setShowStepList] = useState(false);
   const [showDomainInstructions, setShowDomainInstructions] = useState(false);
-  const [logoFailed, setLogoFailed] = useState(false);
   const appShellRef = useRef<HTMLDivElement>(null);
   const domainInstructionsRef = useRef<HTMLDivElement>(null);
   const domainQuestionsRef = useRef<HTMLElement>(null);
@@ -544,12 +544,12 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
   const handleExportPDF = async () => {
     if (pdfAction) return;
     if (!hasSavedDreamSheet) {
-      setSaveReminderMessage("Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.");
+      setSaveReminderMessage("Please remember to click 'Save DREAMSheet' so your completed plan is recorded for beta feedback.");
     }
     setPdfAction('download');
     setPdfError('');
     try {
-      if (!printableDreamSheetRef.current) throw new Error('Printable DREAMsheet unavailable');
+      if (!printableDreamSheetRef.current) throw new Error('Printable DREAMSheet unavailable');
       const { createDreamSheetFilename, generateDreamSheetPdf } = await import('./services/pdfService');
       const pdf = await generateDreamSheetPdf(printableDreamSheetRef.current);
       const objectUrl = URL.createObjectURL(pdf);
@@ -583,7 +583,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
     setEmailStatus(null);
     setPdfError('');
     try {
-      if (!printableDreamSheetRef.current) throw new Error('Printable DREAMsheet unavailable');
+      if (!printableDreamSheetRef.current) throw new Error('Printable DREAMSheet unavailable');
       const [{ createDreamSheetFilename, generateDreamSheetPdf, MAX_EMAIL_PDF_BYTES }, { sendDreamSheetEmail }] = await Promise.all([
         import('./services/pdfService'),
         import('./services/emailService'),
@@ -602,11 +602,11 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
         pdf,
         filename: createDreamSheetFilename(clientName),
       });
-      setEmailStatus({ type: 'success', message: 'Your DREAMsheet has been sent successfully.' });
+      setEmailStatus({ type: 'success', message: 'Your DREAMSheet has been sent successfully.' });
       emailRequestIdRef.current = null;
     } catch (error) {
-      if (import.meta.env.DEV) console.error('DREAMsheet email failed:', error instanceof Error ? error.message : 'Unknown error');
-      setEmailStatus({ type: 'error', message: "We couldn't send your DREAMsheet right now. Please try again in a moment." });
+      if (import.meta.env.DEV) console.error('DREAMSheet email failed:', error instanceof Error ? error.message : 'Unknown error');
+      setEmailStatus({ type: 'error', message: "We couldn't send your DREAMSheet right now. Please try again in a moment." });
     } finally {
       setPdfAction(null);
       setEmailPhase(null);
@@ -649,17 +649,17 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
           finalDomains
         }
       });
-      setSubmissionSaveMessage('DREAMsheet saved successfully.');
+      setSubmissionSaveMessage('DREAMSheet saved successfully.');
       setSaveReminderMessage('');
       setHasSavedDreamSheet(true);
       recordCriticalSuccess('SUPABASE_SAVE_FAILED');
       onSubmissionSaved?.();
     } catch (error) {
-      console.error("Could not save DREAMsheet submission:", error);
+      console.error("Could not save DREAMSheet submission:", error);
       if (isAuthRequiredError(error)) {
-        setSubmissionSaveMessage('Your session has expired. Please sign in again before saving your DREAMsheet.');
+        setSubmissionSaveMessage('Your session has expired. Please sign in again before saving your DREAMSheet.');
       } else {
-        setSubmissionSaveMessage('Could not save DREAMsheet. Check your connection and select Save DREAMsheet to retry. You can also download the PDF as a backup.');
+        setSubmissionSaveMessage('Could not save DREAMSheet. Check your connection and select Save DREAMSheet to retry. You can also download the PDF as a backup.');
         recordCriticalFailure('SUPABASE_SAVE_FAILED');
       }
     } finally {
@@ -839,7 +839,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
     try {
       sessionStorage.setItem('dreamsheet_session_state', JSON.stringify(sessionState));
     } catch (error) {
-      console.error('Could not save DREAMsheet session position', error);
+      console.error('Could not save DREAMSheet session position', error);
     }
   }, [step, showQuiz, quizPhase, currentQuizIndex, currentDiscoveryIndex, showDomainVisionResults, hasCurrentSessionIdentity]);
 
@@ -1921,9 +1921,9 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
     const end = formatDate(new Date(targetDate.getTime() + 3600000)); // 1 hour later
 
     if (type === 'google') {
-      return `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task)}&dates=${start}/${end}&details=${encodeURIComponent('Action step from your DREAMsheet AI blueprint.')}`;
+      return `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(task)}&dates=${start}/${end}&details=${encodeURIComponent('Action step from your DREAMSheet AI blueprint.')}`;
     } else {
-      return `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${encodeURIComponent(task)}&startdt=${targetDate.toISOString()}&enddt=${new Date(targetDate.getTime() + 3600000).toISOString()}&body=${encodeURIComponent('Action step from your DREAMsheet AI blueprint.')}`;
+      return `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${encodeURIComponent(task)}&startdt=${targetDate.toISOString()}&enddt=${new Date(targetDate.getTime() + 3600000).toISOString()}&body=${encodeURIComponent('Action step from your DREAMSheet AI blueprint.')}`;
     }
   };
 
@@ -2258,20 +2258,11 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 min-w-0">
-              <div className="flex items-center gap-3 min-w-0">
-                {logoFailed ? (
-                  <div className="flex flex-col text-left min-w-0">
-                    <span className="text-lg sm:text-xl md:text-2xl font-bold tracking-tight text-white leading-tight truncate">DreamSheet AI</span>
-                    <span className="hidden md:block text-[#888888] text-[11px] font-light truncate">Create clarity. Build direction. Take action.</span>
-                  </div>
-                ) : (
-                  <img
-                    src="/flourish-logo.png"
-                    alt="DreamSheet AI"
-                    onError={() => setLogoFailed(true)}
-                    className="h-12 sm:h-14 md:h-16 w-auto max-w-[210px] sm:max-w-[280px] md:max-w-[360px] object-contain shrink-0"
-                  />
-                )}
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex min-w-0 flex-col text-left">
+                  <BrandMark tone="light" size="lg" />
+                  <span className="mt-0.5 hidden truncate text-[10px] font-light tracking-wide text-stone-500 md:block">Create clarity. Build direction. Take action.</span>
+                </div>
               </div>
 
               {/* Official Badge for Tablet/Desktop */}
@@ -2335,7 +2326,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                       "p-2 rounded-full transition-all border border-white/5",
                       showStepList ? "bg-emerald-600 text-white" : "text-stone-500 hover:text-emerald-500 hover:bg-white/5"
                     )}
-                    title="Edit or revisit your DREAMsheet steps"
+                    title="Edit or revisit your DREAMSheet steps"
                     aria-label="Edit or revisit steps"
                   >
                     <span className="flex items-center gap-2">
@@ -2627,11 +2618,8 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                     transition={{ delay: 0.1 }}
                     className="flex items-center justify-center md:justify-start gap-3 text-emerald-600 mb-0.5 w-full"
                   >
-                    <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white shadow-md shadow-emerald-600/10">
-                      <Target size={18} />
-                    </div>
                     <div className="flex flex-col items-start">
-                      <span className="text-lg font-bold tracking-tight text-stone-900">DREAMsheet AI</span>
+                      <BrandMark tone="dark" size="sm" />
                       <span className="text-[10px] md:text-xs font-medium text-stone-500 leading-tight">Create clarity. Build direction. Take action.</span>
                     </div>
                   </motion.div>
@@ -2790,7 +2778,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                                   A Domain is the area of your life and/or work where you want to see improvement (your Health, your Wealth, your Relationships, your Career or your Business, etc.).
                                 </p>
                                 <p>
-                                  The Domain is the heart of your DREAMsheet – we recommend you build one DREAMsheet for each Domain.
+                                  The Domain is the heart of your DREAMSheet – we recommend you build one DREAMSheet for each Domain.
                                 </p>  
                                 <p>
                                   To start your journey, please select just one Domain from the choices below. If you can’t see one that fits your specific situation, don’t worry…you can create your own custom Domain. Or alternatively, you can take our Domain Quiz.
@@ -3002,7 +2990,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                       <section ref={domainQuestionsRef} className="scroll-mt-6 space-y-10 border-t border-stone-100 pt-10">
                         <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-4">
                           <p className="text-stone-600 text-sm max-w-2xl mx-auto md:mx-0 leading-relaxed">
-                            DREAMsheet AI now invites you to drill down further into your chosen Domain so that it can refine your choice by creating 4 FOCUS AREAS. The questions below will help the AI work out the optimal Focus Areas for you.
+                            DREAMSheet AI now invites you to drill down further into your chosen Domain so that it can refine your choice by creating 4 FOCUS AREAS. The questions below will help the AI work out the optimal Focus Areas for you.
                           </p>
                           <p className="text-stone-900 font-bold text-sm">
                             In respect of your chosen Domain: <span className="text-emerald-700 tracking-wide font-extrabold">{selectedRoles[0]}</span>...
@@ -3864,7 +3852,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                     <div className="flex flex-col items-center md:items-start text-center md:text-left">
                       <div className="flex items-center justify-center md:justify-start gap-2 text-emerald-400 mb-2">
                         <Target size={20} />
-                        <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-center md:text-left">Official DREAMsheet AI Masterplan</span>
+                        <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-center md:text-left">Official DREAMSheet AI Masterplan</span>
                       </div>
                       <h2 className="text-2xl md:text-3xl font-light tracking-tight text-center md:text-left">DREAMSheet AI Masterplan</h2>
                       <p className="text-stone-400 text-[10px] md:text-xs mt-1 font-medium italic text-center md:text-left">The only way to predict the future is to create it.</p>
@@ -4431,7 +4419,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                   <div className="flex flex-col items-center md:items-start text-center md:text-left">
                     <div className="flex items-center justify-center md:justify-start gap-2 text-emerald-400 mb-2">
                       <Trophy size={20} />
-                      <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-center md:text-left">Official DREAMsheet AI Strategic Roadmap</span>
+                      <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em] text-center md:text-left">Official DREAMSheet AI Strategic Roadmap</span>
                     </div>
                     <h2 className="text-2xl md:text-3xl font-light tracking-tight text-center md:text-left">Consolidated Strategic Plan</h2>
                     <p className="text-stone-400 text-[10px] md:text-xs mt-1 font-medium italic text-center md:text-left">Validated. Integrated. Ready for execution.</p>
@@ -4577,7 +4565,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
 
                 <div className="bg-stone-50 px-6 md:px-12 py-6 border-t border-stone-100 flex flex-wrap items-center justify-center gap-4 shrink-0 no-print">
                   <div className="w-full max-w-3xl rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-xs md:text-sm font-semibold leading-relaxed text-emerald-900 shadow-sm">
-                    Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.
+                    Please remember to click 'Save DREAMSheet' so your completed plan is recorded for beta feedback.
                   </div>
                   <button 
                     onClick={() => skipToStep(CoachingStep.MASTERPLAN)}
@@ -4586,7 +4574,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                     <ChevronLeft size={18} /> Back to Workshop
                   </button>
                   <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-                    <label htmlFor="dreamsheet-email" className="mb-2 block text-left text-[10px] font-bold uppercase tracking-widest text-stone-500">Email your DREAMsheet</label>
+                    <label htmlFor="dreamsheet-email" className="mb-2 block text-left text-[10px] font-bold uppercase tracking-widest text-stone-500">Email your DREAMSheet</label>
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input
                         id="dreamsheet-email"
@@ -4623,7 +4611,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                     disabled={isSavingSubmission}
                     className="bg-white border border-emerald-200 text-emerald-700 px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-50 transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/10 w-full md:w-auto disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {isSavingSubmission ? 'Saving...' : 'Save DREAMsheet'}
+                    {isSavingSubmission ? 'Saving...' : 'Save DREAMSheet'}
                   </button>
                   <button 
                     onClick={handleExportPDF}
@@ -4635,7 +4623,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                   <button 
                     onClick={() => {
                       if (!hasSavedDreamSheet) {
-                        setSaveReminderMessage("Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.");
+                        setSaveReminderMessage("Please remember to click 'Save DREAMSheet' so your completed plan is recorded for beta feedback.");
                       }
                       setShowResetConfirm(true);
                     }}
@@ -4943,7 +4931,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
               </p>
               {!hasSavedDreamSheet && (
                 <p className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-relaxed text-amber-900">
-                  Please remember to click 'Save DREAMsheet' so your completed plan is recorded for beta feedback.
+                  Please remember to click 'Save DREAMSheet' so your completed plan is recorded for beta feedback.
                 </p>
               )}
               <div className="flex gap-3">
@@ -4996,7 +4984,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                     <Users size={22} />
                   </div>
                   <h3 className="text-2xl font-light text-stone-900 font-serif italic mt-3">
-                    Initialize Your <span className="font-sans not-italic font-bold text-emerald-700">DREAMsheet Session</span>
+                    Initialize Your <span className="font-sans not-italic font-bold text-emerald-700">DREAMSheet Session</span>
                   </h3>
                   <p className="text-stone-500 text-xs md:text-sm font-light max-w-sm">
                     Enter your Client name and your Coach (if relevant) to customize your strategic plan and active roadmap.

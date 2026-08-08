@@ -15,24 +15,24 @@ export interface AdminAlertDefinition {
 
 export const ADMIN_ALERT_DEFINITIONS: Record<AdminAlertType, AdminAlertDefinition> = {
   SUPABASE_SAVE_FAILED: {
-    component: 'DREAMsheet Save / Supabase',
-    failure: 'Repeated DREAMsheet save failures',
-    subject: '[DREAMsheet Alert] Supabase save failures',
+    component: 'DREAMSheet Save / Supabase',
+    failure: 'Repeated DREAMSheet save failures',
+    subject: '[DREAMSheet Alert] Supabase save failures',
   },
   GEMINI_REQUEST_FAILED: {
     component: 'AI Generation / Gemini',
     failure: 'Repeated Gemini generation failures after retry handling',
-    subject: '[DREAMsheet Alert] Gemini request failures',
+    subject: '[DREAMSheet Alert] Gemini request failures',
   },
   EMAIL_DELIVERY_FAILED: {
     component: 'Strategic Plan Email / Resend',
-    failure: 'DREAMsheet email delivery failed',
-    subject: '[DREAMsheet Alert] Email delivery failures',
+    failure: 'DREAMSheet email delivery failed',
+    subject: '[DREAMSheet Alert] Email delivery failures',
   },
   CRITICAL_API_FAILED: {
-    component: 'DREAMsheet Critical API',
+    component: 'DREAMSheet Critical API',
     failure: 'A production-critical API operation repeatedly failed',
-    subject: '[DREAMsheet Alert] Critical API failures',
+    subject: '[DREAMSheet Alert] Critical API failures',
   },
 };
 

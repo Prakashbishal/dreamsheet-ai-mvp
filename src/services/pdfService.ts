@@ -19,6 +19,14 @@ export class DreamSheetPdfError extends Error {
 
 const nextPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
+async function waitForImages(element: HTMLElement): Promise<void> {
+  const pending = Array.from(element.querySelectorAll('img')).filter(image => !image.complete);
+  await Promise.all(pending.map(image => new Promise<void>((resolve) => {
+    image.addEventListener('load', () => resolve(), { once: true });
+    image.addEventListener('error', () => resolve(), { once: true });
+  })));
+}
+
 function findPageBreak(context: CanvasRenderingContext2D, start: number, idealEnd: number, width: number): number {
   const minimum = start + Math.floor((idealEnd - start) * 0.72);
   const searchStep = Math.max(1, Math.floor(width / 800));
@@ -34,13 +42,14 @@ function findPageBreak(context: CanvasRenderingContext2D, start: number, idealEn
 }
 
 export async function generateDreamSheetPdf(element: HTMLElement, options: DreamSheetPdfOptions = {}): Promise<Blob> {
-  if (!element) throw new DreamSheetPdfError('The printable DREAMsheet is unavailable.');
+  if (!element) throw new DreamSheetPdfError('The printable DREAMSheet is unavailable.');
   await document.fonts?.ready;
+  await waitForImages(element);
   await nextPaint();
 
   const width = element.scrollWidth;
   const height = element.scrollHeight;
-  if (width <= 0 || height <= 0) throw new DreamSheetPdfError('The printable DREAMsheet has no content.');
+  if (width <= 0 || height <= 0) throw new DreamSheetPdfError('The printable DREAMSheet has no content.');
 
   const scale = options.captureScale ?? 1.5;
   const quality = options.imageQuality ?? 0.86;
@@ -58,7 +67,7 @@ export async function generateDreamSheetPdf(element: HTMLElement, options: Dream
       windowWidth: width,
       windowHeight: height,
     });
-    if (!canvas.width || !canvas.height) throw new DreamSheetPdfError('The DREAMsheet capture was empty.');
+    if (!canvas.width || !canvas.height) throw new DreamSheetPdfError('The DREAMSheet capture was empty.');
 
     const pdf = new jsPDF({ format: 'a4', orientation: 'portrait', unit: 'mm', compress: true });
     const pageWidth = pdf.internal.pageSize.getWidth();
@@ -67,7 +76,7 @@ export async function generateDreamSheetPdf(element: HTMLElement, options: Dream
     const contentHeight = pageHeight - margin * 2;
     const pagePixelHeight = Math.max(1, Math.floor(canvas.width * contentHeight / contentWidth));
     const sourceContext = canvas.getContext('2d', { willReadFrequently: true });
-    if (!sourceContext) throw new DreamSheetPdfError('The DREAMsheet capture could not be read.');
+    if (!sourceContext) throw new DreamSheetPdfError('The DREAMSheet capture could not be read.');
 
     let sourceY = 0;
     let pageIndex = 0;
@@ -104,7 +113,7 @@ export async function generateDreamSheetPdf(element: HTMLElement, options: Dream
     return blob;
   } catch (error) {
     if (error instanceof DreamSheetPdfError) throw error;
-    throw new DreamSheetPdfError('The DREAMsheet PDF could not be created.');
+    throw new DreamSheetPdfError('The DREAMSheet PDF could not be created.');
   } finally {
     if (canvas) {
       canvas.width = 0;
@@ -119,5 +128,5 @@ export function createDreamSheetFilename(clientName: string, date = new Date()):
     .replace(/[^a-zA-Z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60) || 'Coachee';
-  return `DREAMsheet-Strategic-Plan-${safeName}-${date.toISOString().slice(0, 10)}.pdf`;
+  return `DREAMSheet-Strategic-Plan-${safeName}-${date.toISOString().slice(0, 10)}.pdf`;
 }
