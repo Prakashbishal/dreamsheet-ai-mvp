@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
 import type { Domain } from '../types';
+import { BrandMark } from './BrandMark';
 
 interface PrintableDreamSheetProps {
   domains: Domain[];
@@ -52,11 +53,14 @@ export const PrintableDreamSheet = forwardRef<HTMLDivElement, PrintableDreamShee
       }}
     >
       <header data-pdf-section style={{ borderBottom: '4px solid #059669', marginBottom: 28, paddingBottom: 22 }}>
-        <div style={{ color: '#059669', fontSize: 12, fontWeight: 800, letterSpacing: '0.22em', textTransform: 'uppercase' }}>
-          DREAMsheet AI
+        <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', minHeight: 40 }}>
+          <BrandMark tone="dark" size="md" />
+          <div style={{ color: '#047857', fontSize: 10, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+            Strategic Plan
+          </div>
         </div>
         <h1 style={{ color: '#1c1917', fontSize: 34, lineHeight: 1.1, margin: '10px 0 20px' }}>
-          Strategic Plan
+          Your DREAMSheet Strategic Plan
         </h1>
         <div style={{ display: 'grid', gap: 14, gridTemplateColumns: '1fr 1fr 1fr' }}>
           <Detail label="Coachee" value={clientName || 'Not specified'} />

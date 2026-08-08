@@ -57,7 +57,7 @@ async function getAuthenticatedUser() {
   if (error && error.name !== 'AuthSessionMissingError' && error.status !== 401 && error.status !== 403) {
     throw new SubmissionServiceError('QUERY_FAILED', 'Your secure session could not be verified. Please try again.');
   }
-  if (!data.user) throw new SubmissionServiceError('AUTH_REQUIRED', 'Please sign in to save or view DREAMsheets.');
+  if (!data.user) throw new SubmissionServiceError('AUTH_REQUIRED', 'Please sign in to save or view DREAMSheets.');
   return { client, user: data.user };
 }
 
@@ -99,7 +99,7 @@ export async function getMyDreamSheets(): Promise<SavedDreamSheet[]> {
     data = fallback.data as Record<string, unknown>[] | null;
     queryError = fallback.error;
   }
-  if (queryError) throw new SubmissionServiceError('QUERY_FAILED', 'Your DREAMsheets could not be loaded.');
+  if (queryError) throw new SubmissionServiceError('QUERY_FAILED', 'Your DREAMSheets could not be loaded.');
   return (data ?? [])
     .map(normalizeSavedDreamSheet)
     .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
@@ -120,6 +120,6 @@ export async function getMyDreamSheetById(id: string): Promise<SavedDreamSheet> 
     data = fallback.data as Record<string, unknown> | null;
     queryError = fallback.error;
   }
-  if (queryError || !data) throw new SubmissionServiceError('QUERY_FAILED', 'This DREAMsheet could not be loaded.');
+  if (queryError || !data) throw new SubmissionServiceError('QUERY_FAILED', 'This DREAMSheet could not be loaded.');
   return normalizeSavedDreamSheet(data);
 }
