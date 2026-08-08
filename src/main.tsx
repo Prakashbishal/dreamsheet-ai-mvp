@@ -1,10 +1,13 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
+import AuthenticatedDreamSheetApp from './AuthenticatedDreamSheetApp.tsx';
+import { AuthProvider } from './contexts/AuthContext.tsx';
 import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <AuthProvider>
+      <AuthenticatedDreamSheetApp />
+    </AuthProvider>
   </StrictMode>,
 );

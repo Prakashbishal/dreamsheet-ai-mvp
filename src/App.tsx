@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { saveDreamSheetSubmission } from "./services/submissionService";
+import { isAuthRequiredError, saveDreamSheetSubmission } from "./services/submissionService";
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronRight, 
@@ -216,7 +216,11 @@ try {
   console.error("Error running one-time reset logic", e);
 }
 
-export default function App() {
+interface AppProps {
+  onSubmissionSaved?: () => void;
+}
+
+export default function App({ onSubmissionSaved }: AppProps = {}) {
   // Helper for lazy initial state from local storage
   const getInitialState = (key: string, defaultValue: any) => {
     try {
@@ -649,10 +653,15 @@ export default function App() {
       setSaveReminderMessage('');
       setHasSavedDreamSheet(true);
       recordCriticalSuccess('SUPABASE_SAVE_FAILED');
+      onSubmissionSaved?.();
     } catch (error) {
       console.error("Could not save DREAMsheet submission:", error);
-      setSubmissionSaveMessage('Could not save DREAMsheet. Check your connection and select Save DREAMsheet to retry. You can also download the PDF as a backup.');
-      recordCriticalFailure('SUPABASE_SAVE_FAILED');
+      if (isAuthRequiredError(error)) {
+        setSubmissionSaveMessage('Your session has expired. Please sign in again before saving your DREAMsheet.');
+      } else {
+        setSubmissionSaveMessage('Could not save DREAMsheet. Check your connection and select Save DREAMsheet to retry. You can also download the PDF as a backup.');
+        recordCriticalFailure('SUPABASE_SAVE_FAILED');
+      }
     } finally {
       setIsSavingSubmission(false);
     }
