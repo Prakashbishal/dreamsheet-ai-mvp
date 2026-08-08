@@ -39,6 +39,35 @@
     display: none;
   }
 
+  .auth-surface {
+    color-scheme: light;
+  }
+
+  .auth-field:-webkit-autofill,
+  .auth-field:-webkit-autofill:hover,
+  .auth-field:-webkit-autofill:focus {
+    -webkit-text-fill-color: #1c1917;
+    caret-color: #1c1917;
+    -webkit-box-shadow: 0 0 0 1000px #fafaf9 inset;
+    box-shadow: 0 0 0 1000px #fafaf9 inset;
+    transition: background-color 9999s ease-out 0s;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .auth-surface {
+      color-scheme: dark;
+    }
+
+    .auth-field:-webkit-autofill,
+    .auth-field:-webkit-autofill:hover,
+    .auth-field:-webkit-autofill:focus {
+      -webkit-text-fill-color: #f5f5f4;
+      caret-color: #f5f5f4;
+      -webkit-box-shadow: 0 0 0 1000px #1c1917 inset;
+      box-shadow: 0 0 0 1000px #1c1917 inset;
+    }
+  }
+
   @media print {
     .no-print,
     .no-export,
