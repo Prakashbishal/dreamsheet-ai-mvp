@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, ShieldCheck, Sparkles } from 'lucide-react';
-import type { DreamKeyPlan, DreamKeyPlanId } from '../config/dreamKeyPlans';
+import type { DreamKeyDisplayPlan, DreamKeyPlanId } from '../config/dreamKeyPlans';
 import {
   beginDreamKeyCheckout,
   DreamKeyIntegrationPendingError,
+  DreamKeyServiceError,
   getDreamKeyPlans,
   redeemDreamKeyCode,
 } from '../services/dreamKeyService';
@@ -15,7 +16,6 @@ interface DreamKeyPlansPageProps {
 }
 
 const CHECKOUT_PENDING_MESSAGE = 'Secure checkout is being connected. No payment has been taken and no DREAMKey has been issued.';
-const CODE_PENDING_MESSAGE = 'Code redemption will be available when secure checkout is connected.';
 
 export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
   const plans = getDreamKeyPlans();
@@ -24,7 +24,7 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
   const [applyingCode, setApplyingCode] = useState(false);
   const [commerceMessage, setCommerceMessage] = useState('');
 
-  const handlePlanAction = async (plan: DreamKeyPlan) => {
+  const handlePlanAction = async (plan: DreamKeyDisplayPlan) => {
     setCommerceMessage('');
 
     if (plan.billingType === 'enterprise') {
@@ -53,12 +53,21 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
     setApplyingCode(true);
     setCommerceMessage('');
     try {
-      await redeemDreamKeyCode(normalizedCode);
-    } catch (error) {
-      if (!(error instanceof DreamKeyIntegrationPendingError)) {
-        console.error('Could not apply DREAMKey code.', error);
+      const result = await redeemDreamKeyCode(normalizedCode);
+      if (result.kind === 'free') {
+        setCommerceMessage(result.keysGranted === 1
+          ? '1 DREAMKey has been added to your account.'
+          : `${result.keysGranted} DREAMKeys have been added to your account.`);
+      } else {
+        setCommerceMessage('This code is valid and can be applied when secure checkout is connected.');
       }
-      setCommerceMessage(CODE_PENDING_MESSAGE);
+    } catch (error) {
+      if (error instanceof DreamKeyServiceError) {
+        setCommerceMessage(error.message);
+      } else {
+        console.error('Could not apply DREAMKey code.', error);
+        setCommerceMessage('This DREAMKey code could not be applied. Please try again.');
+      }
     } finally {
       setApplyingCode(false);
     }

@@ -1,8 +1,8 @@
-export type DreamKeyBillingType = 'one_time' | 'monthly' | 'yearly' | 'enterprise';
+import type { DreamKeyBillingType } from '../types/dreamKey';
 
 export type DreamKeyPlanId = 'one-dreamkey' | 'dreamkey-monthly' | 'dreamkey-yearly' | 'teams-coaches';
 
-export interface DreamKeyPlan {
+export interface DreamKeyDisplayPlan {
   id: DreamKeyPlanId;
   name: string;
   billingType: DreamKeyBillingType;
@@ -18,7 +18,7 @@ export interface DreamKeyPlan {
 
 // TODO: Replace placeholder pricing and membership allowances with approved
 // commercial values before secure checkout is enabled.
-export const DREAM_KEY_PLANS: readonly DreamKeyPlan[] = [
+export const DREAM_KEY_PLANS: readonly DreamKeyDisplayPlan[] = [
   {
     id: 'one-dreamkey',
     name: 'One DREAMKey',
