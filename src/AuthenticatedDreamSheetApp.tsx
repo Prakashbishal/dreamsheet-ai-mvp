@@ -5,7 +5,12 @@ import { AuthScreen } from './components/AuthScreen';
 import { DreamSheetDashboard } from './components/DreamSheetDashboard';
 import { SavedDreamSheetView } from './components/SavedDreamSheetView';
 import { useAuth } from './contexts/AuthContext';
-import { getMyDreamSheetById, type SavedDreamSheet } from './services/submissionService';
+import {
+  getMyDreamSheetById,
+  getMyDreamSheetDraftById,
+  type SavedDreamSheet,
+} from './services/submissionService';
+import { CoachingStep, type Domain } from './types';
 
 const ACTIVE_CREATION_KEY = 'dreamsheet_active_creation';
 const LOCAL_PLAN_KEY = 'coaching_plan_state';
@@ -124,6 +129,122 @@ function createCloudDraftJourney(userId: string): CloudDraftJourneyState {
   };
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function getString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function getStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function getRecordArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    : [];
+}
+
+function getRecoveredDomains(plan: Record<string, unknown>, submission: SavedDreamSheet): Domain[] {
+  const savedDomains = getRecordArray(plan.domains)
+    .filter(domain => typeof domain.id === 'string' && typeof domain.name === 'string' && Array.isArray(domain.subAreas));
+
+  if (savedDomains.length) return savedDomains as unknown as Domain[];
+
+  return getRecordArray(submission.focus_areas)
+    .filter(domain => typeof domain.domain_name === 'string' && Array.isArray(domain.focus_areas))
+    .map((domain, index) => ({
+      id: getString(domain.domain_id, `recovered-domain-${index}`),
+      name: getString(domain.domain_name),
+      subAreas: getRecordArray(domain.focus_areas) as unknown as Domain['subAreas'],
+    }));
+}
+
+function isCoachingStep(value: unknown): value is CoachingStep {
+  return Object.values(CoachingStep).includes(value as CoachingStep);
+}
+
+function getRecoverableStep(
+  plan: Record<string, unknown>,
+  domains: Domain[],
+  clientName: string,
+  coachName: string,
+): CoachingStep {
+  if (isCoachingStep(plan.step)) return plan.step;
+  if (
+    domains.length ||
+    getStringArray(plan.selectedRoles).length ||
+    getRecordArray(plan.quizResponses).some(response => getString(response.answer).trim()) ||
+    getRecordArray(plan.discoveryResponses).some(response => getString(response.answer).trim())
+  ) {
+    return CoachingStep.DOMAIN;
+  }
+  return clientName.trim() || coachName.trim() ? CoachingStep.CLEAR_SPACE : CoachingStep.WELCOME;
+}
+
+function getBoundedIndex(value: unknown, maximum: number): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= maximum ? value : 0;
+}
+
+function restoreCloudDraftWorkingState(submission: SavedDreamSheet): void {
+  const plan = asRecord(submission.plan_data);
+  const domains = getRecoveredDomains(plan, submission);
+  const clientName = getString(plan.clientName, submission.client_name ?? '');
+  const coachName = getString(plan.coachName, submission.coach_name ?? '');
+  const selectedRoles = getStringArray(plan.selectedRoles);
+  const step = getRecoverableStep(plan, domains, clientName, coachName);
+  const quizPhase = plan.quizPhase === 'input' || plan.quizPhase === 'analysis' || plan.quizPhase === 'rating'
+    ? plan.quizPhase
+    : 'intro';
+
+  const localState = {
+    domains,
+    clientName,
+    coachName,
+    timeHorizon: getString(plan.timeHorizon, '12 months'),
+    selectedRoles: selectedRoles.length ? selectedRoles : getStringArray(submission.domains),
+    lastSelectedDomain: typeof plan.lastSelectedDomain === 'string' ? plan.lastSelectedDomain : null,
+    discoveryResponses: getRecordArray(plan.discoveryResponses),
+    activeDomainId: typeof plan.activeDomainId === 'string' ? plan.activeDomainId : null,
+    customDiscoveryDomains: getStringArray(plan.customDiscoveryDomains),
+    planNotes: getString(plan.planNotes),
+    quizResponses: getRecordArray(plan.quizResponses),
+    distractions: getStringArray(plan.distractions),
+    planCreatedAt: getString(plan.planCreatedAt, submission.created_at ?? new Date().toISOString()),
+    isCoachMode: plan.isCoachMode === true,
+    suggestedDomains: getRecordArray(plan.suggestedDomains),
+    completedDomainIds: getStringArray(plan.completedDomainIds),
+    showNameCapture: typeof plan.showNameCapture === 'boolean' ? plan.showNameCapture : !(clientName || coachName),
+  };
+
+  const sessionState = {
+    step,
+    showQuiz: step === CoachingStep.DOMAIN && plan.showQuiz === true,
+    quizPhase,
+    currentQuizIndex: getBoundedIndex(plan.currentQuizIndex, 9),
+    currentDiscoveryIndex: getBoundedIndex(plan.currentDiscoveryIndex, 5),
+    showDomainVisionResults: step === CoachingStep.DOMAIN && plan.showDomainVisionResults === true,
+    hasCurrentSessionIdentity: typeof plan.hasCurrentSessionIdentity === 'boolean'
+      ? plan.hasCurrentSessionIdentity
+      : Boolean(clientName || coachName),
+  };
+
+  try {
+    localStorage.setItem(LOCAL_PLAN_KEY, JSON.stringify(localState));
+    sessionStorage.setItem(SESSION_PLAN_KEY, JSON.stringify(sessionState));
+    sessionStorage.setItem(ACTIVE_CREATION_KEY, 'true');
+  } catch (error) {
+    console.error('Could not restore cloud draft into browser storage.', error);
+    throw new Error('This draft was loaded, but this browser could not restore it locally. Check browser storage access and try again.');
+  }
+}
+
 export default function AuthenticatedDreamSheetApp() {
   const { loading, passwordRecovery, signOut, user } = useAuth();
   const authenticatedUserId = user?.id;
@@ -132,6 +253,7 @@ export default function AuthenticatedDreamSheetApp() {
   const [savedDreamSheet, setSavedDreamSheet] = useState<SavedDreamSheet | null>(null);
   const [savedIntent, setSavedIntent] = useState<SavedIntent>('view');
   const [openingSaved, setOpeningSaved] = useState(false);
+  const [openingDraft, setOpeningDraft] = useState(false);
   const [shellError, setShellError] = useState('');
   const [cloudDraftJourney, setCloudDraftJourney] = useState<CloudDraftJourneyState | null>(null);
   const savedLoadRequestRef = useRef(0);
@@ -182,6 +304,7 @@ export default function AuthenticatedDreamSheetApp() {
   const showDashboard = useCallback((replaceHistory = false) => {
     savedLoadRequestRef.current += 1;
     setOpeningSaved(false);
+    setOpeningDraft(false);
     setSavedDreamSheet(null);
     setShellError('');
     setDashboardRefreshToken(value => value + 1);
@@ -222,6 +345,35 @@ export default function AuthenticatedDreamSheetApp() {
       if (requestId === savedLoadRequestRef.current) setOpeningSaved(false);
     }
   }, []);
+
+  const continueCloudDraft = useCallback(async (id: string) => {
+    if (!authenticatedUserId) return;
+    const requestId = ++savedLoadRequestRef.current;
+    setOpeningDraft(true);
+    setShellError('');
+
+    try {
+      const submission = await getMyDreamSheetDraftById(id);
+      if (requestId !== savedLoadRequestRef.current) return;
+
+      restoreCloudDraftWorkingState(submission);
+      storeCloudDraftJourney({
+        ...createCloudDraftJourney(authenticatedUserId),
+        draftId: submission.id,
+      });
+      setSavedDreamSheet(null);
+      pushShellHistoryState({ view: 'journey', fromDashboard: true });
+      setView('journey');
+    } catch (error) {
+      if (requestId !== savedLoadRequestRef.current) return;
+      setShellError(error instanceof Error
+        ? error.message
+        : 'This draft is no longer available. Refresh the dashboard and try again.');
+      setView('dashboard');
+    } finally {
+      if (requestId === savedLoadRequestRef.current) setOpeningDraft(false);
+    }
+  }, [authenticatedUserId, storeCloudDraftJourney]);
 
   useEffect(() => {
     if (!loading && (!user || passwordRecovery)) displayedAuthScreenRef.current = true;
@@ -283,6 +435,7 @@ export default function AuthenticatedDreamSheetApp() {
         sessionStorage.setItem(ACTIVE_CREATION_KEY, 'true');
         activateCloudDraftJourney();
         setOpeningSaved(false);
+        setOpeningDraft(false);
         setSavedDreamSheet(null);
         setShellError('');
         setView('journey');
@@ -301,10 +454,12 @@ export default function AuthenticatedDreamSheetApp() {
   }, [activateCloudDraftJourney, loadSavedDreamSheet, passwordRecovery, showDashboard, storeCloudDraftJourney, user?.id]);
 
   const startNewDreamSheet = () => {
+    savedLoadRequestRef.current += 1;
     clearDreamSheetWorkingState();
     activateCloudDraftJourney(true);
     sessionStorage.setItem(ACTIVE_CREATION_KEY, 'true');
     setSavedDreamSheet(null);
+    setOpeningDraft(false);
     setShellError('');
     pushShellHistoryState({ view: 'journey', fromDashboard: true });
     setView('journey');
@@ -330,6 +485,7 @@ export default function AuthenticatedDreamSheetApp() {
     cloudDraftJourneyRef.current = null;
     setCloudDraftJourney(null);
     setOpeningSaved(false);
+    setOpeningDraft(false);
     setSavedDreamSheet(null);
     setView('dashboard');
     replaceShellHistoryState({ view: 'dashboard' });
@@ -338,6 +494,10 @@ export default function AuthenticatedDreamSheetApp() {
 
   const openSavedDreamSheet = (id: string, intent: SavedIntent = 'view') => {
     void loadSavedDreamSheet(id, intent, 'push');
+  };
+
+  const openCloudDraft = (id: string) => {
+    void continueCloudDraft(id);
   };
 
   if (loading) {
@@ -372,10 +532,12 @@ export default function AuthenticatedDreamSheetApp() {
   return (
     <>
       {openingSaved && <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 text-sm font-bold text-white backdrop-blur-sm">Opening DREAMSheet…</div>}
+      {openingDraft && <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 text-sm font-bold text-white backdrop-blur-sm">Restoring your draft…</div>}
       <DreamSheetDashboard
         userEmail={user.email || 'Signed-in user'}
         refreshToken={dashboardRefreshToken}
         onCreate={startNewDreamSheet}
+        onContinueDraft={openCloudDraft}
         onOpen={openSavedDreamSheet}
         onLogout={handleLogout}
         externalError={shellError}
