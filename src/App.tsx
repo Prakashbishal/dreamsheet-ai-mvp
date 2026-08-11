@@ -1,5 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { isAuthRequiredError, saveDreamSheetSubmission } from "./services/submissionService";
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  completeDreamSheetDraft,
+  createDreamSheetDraft,
+  isAuthRequiredError,
+  saveDreamSheetSubmission,
+  updateDreamSheetDraft,
+  type DreamSheetSubmission,
+} from "./services/submissionService";
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ChevronRight, 
@@ -219,9 +226,25 @@ try {
 
 interface AppProps {
   onSubmissionSaved?: () => void;
+  cloudDraftJourneyToken?: string;
+  activeCloudDraftId?: string | null;
+  cloudAutosaveStopped?: boolean;
+  onCloudDraftCreated?: (journeyToken: string, draftId: string) => void;
+  onCloudDraftCompleted?: (journeyToken: string) => void;
+  onCloudDraftReset?: () => void;
 }
 
-export default function App({ onSubmissionSaved }: AppProps = {}) {
+const CLOUD_AUTOSAVE_DELAY_MS = 2_500;
+
+export default function App({
+  onSubmissionSaved,
+  cloudDraftJourneyToken,
+  activeCloudDraftId = null,
+  cloudAutosaveStopped = false,
+  onCloudDraftCreated,
+  onCloudDraftCompleted,
+  onCloudDraftReset,
+}: AppProps = {}) {
   // Helper for lazy initial state from local storage
   const getInitialState = (key: string, defaultValue: any) => {
     try {
@@ -458,7 +481,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
 
   const [isSavingSubmission, setIsSavingSubmission] = useState(false);
   const [submissionSaveMessage, setSubmissionSaveMessage] = useState('');
-  const [hasSavedDreamSheet, setHasSavedDreamSheet] = useState(false);
+  const [hasSavedDreamSheet, setHasSavedDreamSheet] = useState(cloudAutosaveStopped);
   const [saveReminderMessage, setSaveReminderMessage] = useState('');
   const [localSaveStatus, setLocalSaveStatus] = useState<'saved' | 'error'>('saved');
   const [pdfAction, setPdfAction] = useState<'download' | 'email' | null>(null);
@@ -467,7 +490,131 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
   const [emailPhase, setEmailPhase] = useState<'creating' | 'sending' | null>(null);
   const [pdfError, setPdfError] = useState('');
 
-  const currentSessionDomains = domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0);
+  const cloudAutosaveTimerRef = useRef<number | null>(null);
+  const cloudAutosaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const cloudAutosaveRevisionRef = useRef(0);
+  const cloudDraftJourneyTokenRef = useRef(cloudDraftJourneyToken ?? null);
+  const activeCloudDraftIdRef = useRef(activeCloudDraftId);
+  const cloudAutosaveStoppedRef = useRef(cloudAutosaveStopped || !cloudDraftJourneyToken);
+
+  const currentSessionDomains = useMemo(
+    () => domains.filter(d => (d.id === activeDomainId || completedDomainIds.includes(d.id)) && d.subAreas.length > 0),
+    [activeDomainId, completedDomainIds, domains],
+  );
+
+  const cloudSubmission = useMemo<DreamSheetSubmission>(() => {
+    const focusAreas = currentSessionDomains.map(domain => ({
+      domain_id: domain.id,
+      domain_name: domain.name,
+      focus_areas: domain.subAreas,
+    }));
+
+    return {
+      client_name: clientName,
+      coach_name: coachName,
+      domains: currentSessionDomains.map(domain => domain.name),
+      focus_areas: focusAreas,
+      plan_data: {
+        clientName,
+        coachName,
+        planNotes,
+        planCreatedAt,
+        timeHorizon,
+        selectedRoles,
+        lastSelectedDomain,
+        discoveryResponses,
+        quizResponses,
+        quizPhase,
+        completedDomainIds,
+        activeDomainId,
+        customDiscoveryDomains,
+        suggestedDomains,
+        domains,
+        finalDomains: currentSessionDomains,
+        distractions,
+        isCoachMode,
+        showNameCapture,
+        step,
+        showQuiz,
+        currentQuizIndex,
+        currentDiscoveryIndex,
+        showDomainVisionResults,
+        hasCurrentSessionIdentity,
+      },
+    };
+  }, [
+    activeDomainId,
+    clientName,
+    coachName,
+    completedDomainIds,
+    currentDiscoveryIndex,
+    currentQuizIndex,
+    currentSessionDomains,
+    customDiscoveryDomains,
+    discoveryResponses,
+    distractions,
+    domains,
+    hasCurrentSessionIdentity,
+    isCoachMode,
+    lastSelectedDomain,
+    planCreatedAt,
+    planNotes,
+    quizPhase,
+    quizResponses,
+    selectedRoles,
+    showDomainVisionResults,
+    showNameCapture,
+    showQuiz,
+    step,
+    suggestedDomains,
+    timeHorizon,
+  ]);
+
+  const hasMeaningfulCloudContent = useMemo(() => {
+    const hasDiscoveryAnswer = discoveryResponses.some((response, index) => {
+      const answer = response.answer.trim();
+      return Boolean(answer) && !(index === 3 && answer === '12 months');
+    });
+
+    return Boolean(
+      clientName.trim() ||
+      coachName.trim() ||
+      planNotes.trim() ||
+      distractions.some(value => value.trim()) ||
+      quizResponses.some(response => response.answer.trim()) ||
+      hasDiscoveryAnswer ||
+      selectedRoles.length ||
+      customDiscoveryDomains.length ||
+      suggestedDomains.length ||
+      domains.length ||
+      completedDomainIds.length ||
+      activeDomainId
+    );
+  }, [
+    activeDomainId,
+    clientName,
+    coachName,
+    completedDomainIds,
+    customDiscoveryDomains,
+    discoveryResponses,
+    distractions,
+    domains,
+    planNotes,
+    quizResponses,
+    selectedRoles,
+    suggestedDomains,
+  ]);
+
+  const latestCloudSubmissionRef = useRef(cloudSubmission);
+  latestCloudSubmissionRef.current = cloudSubmission;
+
+  const cancelPendingCloudAutosave = () => {
+    if (cloudAutosaveTimerRef.current !== null) {
+      window.clearTimeout(cloudAutosaveTimerRef.current);
+      cloudAutosaveTimerRef.current = null;
+    }
+    cloudAutosaveRevisionRef.current += 1;
+  };
 
   const isPlaceholderEndGoal = (goal?: string) => {
     const normalized = (goal || "").trim().toLowerCase().replace(/[?.\s]+$/g, "");
@@ -614,41 +761,27 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
   };
 
   const handleSaveDreamSheet = async () => {
+    if (isSavingSubmission || hasSavedDreamSheet) return;
+
     setIsSavingSubmission(true);
     setSubmissionSaveMessage('');
 
-    const finalDomains = currentSessionDomains;
-    const focusAreas = finalDomains.map(domain => ({
-      domain_id: domain.id,
-      domain_name: domain.name,
-      focus_areas: domain.subAreas
-    }));
+    cloudAutosaveStoppedRef.current = true;
+    cancelPendingCloudAutosave();
 
     try {
-      await saveDreamSheetSubmission({
-        client_name: clientName,
-        coach_name: coachName,
-        domains: finalDomains.map(domain => domain.name),
-        focus_areas: focusAreas,
-        plan_data: {
-          clientName,
-          coachName,
-          planNotes,
-          planCreatedAt,
-          timeHorizon,
-          selectedRoles,
-          lastSelectedDomain,
-          discoveryResponses,
-          quizResponses,
-          quizPhase,
-          completedDomainIds,
-          activeDomainId,
-          customDiscoveryDomains,
-          suggestedDomains,
-          domains,
-          finalDomains
-        }
-      });
+      await cloudAutosaveQueueRef.current;
+
+      const draftId = activeCloudDraftIdRef.current;
+      if (draftId) {
+        await completeDreamSheetDraft(draftId, cloudSubmission);
+      } else {
+        await saveDreamSheetSubmission(cloudSubmission);
+      }
+
+      const journeyToken = cloudDraftJourneyTokenRef.current;
+      activeCloudDraftIdRef.current = null;
+      if (journeyToken) onCloudDraftCompleted?.(journeyToken);
       setSubmissionSaveMessage('DREAMSheet saved successfully.');
       setSaveReminderMessage('');
       setHasSavedDreamSheet(true);
@@ -662,6 +795,7 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
         setSubmissionSaveMessage('Could not save DREAMSheet. Check your connection and select Save DREAMSheet to retry. You can also download the PDF as a backup.');
         recordCriticalFailure('SUPABASE_SAVE_FAILED');
       }
+      cloudAutosaveStoppedRef.current = !cloudDraftJourneyTokenRef.current;
     } finally {
       setIsSavingSubmission(false);
     }
@@ -797,6 +931,77 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
 
   // Persistence
   useEffect(() => {
+    cloudDraftJourneyTokenRef.current = cloudDraftJourneyToken ?? null;
+    activeCloudDraftIdRef.current = activeCloudDraftId;
+    cloudAutosaveStoppedRef.current = cloudAutosaveStopped || !cloudDraftJourneyToken;
+
+    if (cloudAutosaveStoppedRef.current) {
+      cancelPendingCloudAutosave();
+      if (cloudAutosaveStopped) setHasSavedDreamSheet(true);
+    }
+  }, [activeCloudDraftId, cloudAutosaveStopped, cloudDraftJourneyToken]);
+
+  useEffect(() => {
+    if (
+      cloudAutosaveStoppedRef.current ||
+      !cloudDraftJourneyToken ||
+      (!hasMeaningfulCloudContent && !activeCloudDraftIdRef.current)
+    ) {
+      return;
+    }
+
+    const revision = ++cloudAutosaveRevisionRef.current;
+    if (cloudAutosaveTimerRef.current !== null) {
+      window.clearTimeout(cloudAutosaveTimerRef.current);
+    }
+
+    cloudAutosaveTimerRef.current = window.setTimeout(() => {
+      cloudAutosaveTimerRef.current = null;
+      const journeyToken = cloudDraftJourneyToken;
+
+      cloudAutosaveQueueRef.current = cloudAutosaveQueueRef.current.then(async () => {
+        if (
+          cloudAutosaveStoppedRef.current ||
+          cloudDraftJourneyTokenRef.current !== journeyToken ||
+          cloudAutosaveRevisionRef.current !== revision
+        ) {
+          return;
+        }
+
+        try {
+          const submission = latestCloudSubmissionRef.current;
+          const draftId = activeCloudDraftIdRef.current;
+
+          if (draftId) {
+            await updateDreamSheetDraft(draftId, submission);
+            return;
+          }
+
+          const draft = await createDreamSheetDraft(submission);
+          if (cloudDraftJourneyTokenRef.current !== journeyToken) return;
+
+          activeCloudDraftIdRef.current = draft.id;
+          onCloudDraftCreated?.(journeyToken, draft.id);
+        } catch (error) {
+          console.warn('DREAMSheet cloud autosave failed; local progress is unchanged.', error);
+        }
+      });
+    }, CLOUD_AUTOSAVE_DELAY_MS);
+
+    return () => {
+      if (cloudAutosaveTimerRef.current !== null) {
+        window.clearTimeout(cloudAutosaveTimerRef.current);
+        cloudAutosaveTimerRef.current = null;
+      }
+    };
+  }, [cloudDraftJourneyToken, cloudSubmission, hasMeaningfulCloudContent, onCloudDraftCreated]);
+
+  useEffect(() => () => {
+    cloudAutosaveStoppedRef.current = true;
+    cancelPendingCloudAutosave();
+  }, []);
+
+  useEffect(() => {
     const state = {
       domains,
       clientName,
@@ -856,6 +1061,10 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
   }, [showDomainVisionResults, step]);
 
   const resetPlan = () => {
+    cloudAutosaveStoppedRef.current = true;
+    cancelPendingCloudAutosave();
+    activeCloudDraftIdRef.current = null;
+    onCloudDraftReset?.();
     setDomains([]);
     setClientName('');
     setCoachName('');
@@ -4608,10 +4817,10 @@ export default function App({ onSubmissionSaved }: AppProps = {}) {
                   </div>
                   <button 
                     onClick={handleSaveDreamSheet}
-                    disabled={isSavingSubmission}
+                    disabled={isSavingSubmission || hasSavedDreamSheet}
                     className="bg-white border border-emerald-200 text-emerald-700 px-6 md:px-8 py-3.5 rounded-xl text-xs md:text-sm font-bold tracking-wide hover:bg-emerald-50 transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/10 w-full md:w-auto disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {isSavingSubmission ? 'Saving...' : 'Save DREAMSheet'}
+                    {isSavingSubmission ? 'Saving...' : hasSavedDreamSheet ? 'DREAMSheet Saved' : 'Save DREAMSheet'}
                   </button>
                   <button 
                     onClick={handleExportPDF}

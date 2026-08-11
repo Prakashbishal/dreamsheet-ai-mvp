@@ -10,6 +10,14 @@ import { getMyDreamSheetById, type SavedDreamSheet } from './services/submission
 const ACTIVE_CREATION_KEY = 'dreamsheet_active_creation';
 const LOCAL_PLAN_KEY = 'coaching_plan_state';
 const SESSION_PLAN_KEY = 'dreamsheet_session_state';
+const CLOUD_DRAFT_JOURNEY_KEY = 'dreamsheet_cloud_draft_journey:v1';
+
+interface CloudDraftJourneyState {
+  userId: string;
+  journeyToken: string;
+  draftId: string | null;
+  autosaveStopped: boolean;
+}
 
 type ProtectedView = 'dashboard' | 'journey' | 'saved';
 type SavedIntent = 'view' | 'download' | 'email';
@@ -63,19 +71,113 @@ function clearDreamSheetWorkingState() {
   localStorage.removeItem(LOCAL_PLAN_KEY);
   sessionStorage.removeItem(SESSION_PLAN_KEY);
   sessionStorage.removeItem(ACTIVE_CREATION_KEY);
+  try {
+    sessionStorage.removeItem(CLOUD_DRAFT_JOURNEY_KEY);
+  } catch (error) {
+    console.warn('Could not clear the cloud draft journey identity.', error);
+  }
+}
+
+function readCloudDraftJourney(userId: string): CloudDraftJourneyState | null {
+  try {
+    const saved = sessionStorage.getItem(CLOUD_DRAFT_JOURNEY_KEY);
+    if (!saved) return null;
+    const value = JSON.parse(saved) as Partial<CloudDraftJourneyState>;
+    if (value.userId !== userId || typeof value.journeyToken !== 'string' || !value.journeyToken) return null;
+    return {
+      userId,
+      journeyToken: value.journeyToken,
+      draftId: typeof value.draftId === 'string' && value.draftId ? value.draftId : null,
+      autosaveStopped: value.autosaveStopped === true,
+    };
+  } catch (error) {
+    console.warn('Could not restore the cloud draft journey identity.', error);
+    return null;
+  }
+}
+
+function createCloudDraftJourneyToken(): string {
+  const browserCrypto = globalThis.crypto;
+
+  if (typeof browserCrypto?.randomUUID === 'function') {
+    return browserCrypto.randomUUID();
+  }
+
+  if (typeof browserCrypto?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    browserCrypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  return `journey-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createCloudDraftJourney(userId: string): CloudDraftJourneyState {
+  return {
+    userId,
+    journeyToken: createCloudDraftJourneyToken(),
+    draftId: null,
+    autosaveStopped: false,
+  };
 }
 
 export default function AuthenticatedDreamSheetApp() {
   const { loading, passwordRecovery, signOut, user } = useAuth();
+  const authenticatedUserId = user?.id;
   const [view, setView] = useState<ProtectedView>(getInitialProtectedView);
   const [dashboardRefreshToken, setDashboardRefreshToken] = useState(0);
   const [savedDreamSheet, setSavedDreamSheet] = useState<SavedDreamSheet | null>(null);
   const [savedIntent, setSavedIntent] = useState<SavedIntent>('view');
   const [openingSaved, setOpeningSaved] = useState(false);
   const [shellError, setShellError] = useState('');
+  const [cloudDraftJourney, setCloudDraftJourney] = useState<CloudDraftJourneyState | null>(null);
   const savedLoadRequestRef = useRef(0);
   const returningToDashboardRef = useRef(false);
   const displayedAuthScreenRef = useRef(false);
+  const cloudDraftJourneyRef = useRef<CloudDraftJourneyState | null>(null);
+
+  const storeCloudDraftJourney = useCallback((journey: CloudDraftJourneyState | null) => {
+    cloudDraftJourneyRef.current = journey;
+    setCloudDraftJourney(journey);
+    try {
+      if (journey) {
+        sessionStorage.setItem(CLOUD_DRAFT_JOURNEY_KEY, JSON.stringify(journey));
+      } else {
+        sessionStorage.removeItem(CLOUD_DRAFT_JOURNEY_KEY);
+      }
+    } catch (error) {
+      console.warn('Could not persist the cloud draft journey identity.', error);
+    }
+  }, []);
+
+  const activateCloudDraftJourney = useCallback((forceNew = false) => {
+    if (!authenticatedUserId) return null;
+    const journey = forceNew
+      ? createCloudDraftJourney(authenticatedUserId)
+      : readCloudDraftJourney(authenticatedUserId) ?? createCloudDraftJourney(authenticatedUserId);
+    storeCloudDraftJourney(journey);
+    return journey;
+  }, [authenticatedUserId, storeCloudDraftJourney]);
+
+  const handleCloudDraftCreated = useCallback((journeyToken: string, draftId: string) => {
+    const current = cloudDraftJourneyRef.current;
+    if (!current || current.journeyToken !== journeyToken || current.autosaveStopped) return;
+    storeCloudDraftJourney({ ...current, draftId });
+  }, [storeCloudDraftJourney]);
+
+  const handleCloudDraftCompleted = useCallback((journeyToken: string) => {
+    const current = cloudDraftJourneyRef.current;
+    if (!current || current.journeyToken !== journeyToken) return;
+    storeCloudDraftJourney({ ...current, draftId: null, autosaveStopped: true });
+  }, [storeCloudDraftJourney]);
+
+  const resetCloudDraftJourney = useCallback(() => {
+    if (!authenticatedUserId) return;
+    storeCloudDraftJourney(createCloudDraftJourney(authenticatedUserId));
+  }, [authenticatedUserId, storeCloudDraftJourney]);
 
   const showDashboard = useCallback((replaceHistory = false) => {
     savedLoadRequestRef.current += 1;
@@ -134,6 +236,14 @@ export default function AuthenticatedDreamSheetApp() {
     setShellError('');
     setView(initialView);
 
+    const restoredCloudDraftJourney = readCloudDraftJourney(user.id);
+    if (initialView === 'journey') {
+      storeCloudDraftJourney(restoredCloudDraftJourney ?? createCloudDraftJourney(user.id));
+    } else {
+      cloudDraftJourneyRef.current = restoredCloudDraftJourney;
+      setCloudDraftJourney(restoredCloudDraftJourney);
+    }
+
     const existingShell = getShellHistoryState();
     if (initialView === 'journey') {
       replaceShellHistoryState(existingShell?.view === 'journey'
@@ -171,6 +281,7 @@ export default function AuthenticatedDreamSheetApp() {
       if (shell.view === 'journey') {
         savedLoadRequestRef.current += 1;
         sessionStorage.setItem(ACTIVE_CREATION_KEY, 'true');
+        activateCloudDraftJourney();
         setOpeningSaved(false);
         setSavedDreamSheet(null);
         setShellError('');
@@ -187,10 +298,11 @@ export default function AuthenticatedDreamSheetApp() {
       returningToDashboardRef.current = false;
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [loadSavedDreamSheet, passwordRecovery, showDashboard, user?.id]);
+  }, [activateCloudDraftJourney, loadSavedDreamSheet, passwordRecovery, showDashboard, storeCloudDraftJourney, user?.id]);
 
   const startNewDreamSheet = () => {
     clearDreamSheetWorkingState();
+    activateCloudDraftJourney(true);
     sessionStorage.setItem(ACTIVE_CREATION_KEY, 'true');
     setSavedDreamSheet(null);
     setShellError('');
@@ -215,6 +327,8 @@ export default function AuthenticatedDreamSheetApp() {
     savedLoadRequestRef.current += 1;
     returningToDashboardRef.current = false;
     clearDreamSheetWorkingState();
+    cloudDraftJourneyRef.current = null;
+    setCloudDraftJourney(null);
     setOpeningSaved(false);
     setSavedDreamSheet(null);
     setView('dashboard');
@@ -238,7 +352,15 @@ export default function AuthenticatedDreamSheetApp() {
   if (view === 'journey') {
     return (
       <>
-        <App onSubmissionSaved={() => setDashboardRefreshToken(value => value + 1)} />
+        <App
+          onSubmissionSaved={() => setDashboardRefreshToken(value => value + 1)}
+          cloudDraftJourneyToken={cloudDraftJourney?.journeyToken}
+          activeCloudDraftId={cloudDraftJourney?.draftId}
+          cloudAutosaveStopped={cloudDraftJourney?.autosaveStopped}
+          onCloudDraftCreated={handleCloudDraftCreated}
+          onCloudDraftCompleted={handleCloudDraftCompleted}
+          onCloudDraftReset={resetCloudDraftJourney}
+        />
         <nav aria-label="Account navigation" className="fixed bottom-4 right-4 z-[10050] flex gap-2 rounded-2xl border border-stone-200 bg-white/95 p-2 shadow-2xl backdrop-blur">
           <button type="button" onClick={returnToDashboard} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"><LayoutDashboard size={15} /> My DREAMSheets</button>
           <button type="button" onClick={() => void handleLogout()} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"><LogOut size={15} /> Logout</button>
