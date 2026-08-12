@@ -2,6 +2,8 @@ import { DREAM_KEY_PLANS, type DreamKeyDisplayPlan, type DreamKeyPlanId } from '
 import { supabase } from '../lib/supabaseClient';
 import type {
   DreamKeyBalance,
+  DreamKeyBillingHistoryEntry,
+  DreamKeyBillingType,
   DreamKeyCheckoutStatus,
   DreamKeyCodeResult,
   DreamKeyCodeType,
@@ -10,6 +12,7 @@ import type {
   DreamKeyEntitlement,
   DreamKeyEntitlementStatus,
   DreamKeySourceType,
+  DreamKeySubscription,
 } from '../types/dreamKey';
 
 export type DreamKeyPendingAction = 'checkout';
@@ -54,6 +57,7 @@ const SOURCE_TYPES: readonly DreamKeySourceType[] = [
 
 const CODE_TYPES: readonly DreamKeyCodeType[] = ['free', 'discount', 'affiliate'];
 const DISCOUNT_TYPES: readonly DreamKeyDiscountType[] = ['percentage', 'fixed'];
+const BILLING_TYPES: readonly DreamKeyBillingType[] = ['one_time', 'monthly', 'yearly', 'enterprise'];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -89,6 +93,41 @@ function getCount(value: unknown): number {
     throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'The DREAMKey service returned an unexpected response.');
   }
   return count;
+}
+
+function normalizeBillingHistoryEntry(value: unknown): DreamKeyBillingHistoryEntry {
+  const row = asRecord(value);
+  if (!row) {
+    throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'Your DREAMKey billing history returned an unexpected response.');
+  }
+  const kind = row.kind;
+  const billingType = row.billingType;
+  const status = row.status;
+  const amountMinor = row.amountMinor;
+  const currency = row.currency;
+  if (!['one_time', 'subscription'].includes(String(kind))
+    || !BILLING_TYPES.includes(billingType as DreamKeyBillingType)
+    || !['paid', 'refunded'].includes(String(status))
+    || (amountMinor !== null && (!Number.isSafeInteger(amountMinor) || Number(amountMinor) < 0))
+    || (currency !== null && typeof currency !== 'string')) {
+    throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'Your DREAMKey billing history returned an unexpected response.');
+  }
+  return {
+    id: getRequiredString(row, 'id'),
+    kind: kind as DreamKeyBillingHistoryEntry['kind'],
+    checkoutSessionId: getNullableString(row, 'checkoutSessionId'),
+    planName: getRequiredString(row, 'planName'),
+    billingType: billingType as DreamKeyBillingType,
+    status: status as DreamKeyBillingHistoryEntry['status'],
+    amountMinor: amountMinor === null ? null : Number(amountMinor),
+    currency: currency as string | null,
+    paidAt: getRequiredString(row, 'paidAt'),
+    reference: getNullableString(row, 'reference'),
+    keysGranted: getCount(row.keysGranted),
+    receiptUrl: getNullableString(row, 'receiptUrl'),
+    hostedInvoiceUrl: getNullableString(row, 'hostedInvoiceUrl'),
+    invoicePdfUrl: getNullableString(row, 'invoicePdfUrl'),
+  };
 }
 
 function normalizeEntitlement(value: unknown): DreamKeyEntitlement {
@@ -189,8 +228,47 @@ export async function getDreamKeyBalance(): Promise<DreamKeyBalance> {
   };
 }
 
+export async function getDreamKeyBillingHistory(): Promise<DreamKeyBillingHistoryEntry[]> {
+  const client = await getAuthenticatedClient();
+  const { data, error } = await client.auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new DreamKeyServiceError('AUTH_REQUIRED', 'Please sign in again to view DREAMKey billing history.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch('/api/dreamkey-billing-history', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${data.session.access_token}` },
+    });
+  } catch {
+    throw new DreamKeyServiceError('QUERY_FAILED', 'Your DREAMKey billing history could not be loaded.');
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  const result = asRecord(body);
+  if (!response.ok || result?.ok !== true || !Array.isArray(result.history)) {
+    if (response.status === 401) {
+      throw new DreamKeyServiceError('AUTH_REQUIRED', 'Please sign in again to view DREAMKey billing history.');
+    }
+    throw new DreamKeyServiceError('QUERY_FAILED', 'Your DREAMKey billing history could not be loaded.');
+  }
+  return result.history.map(normalizeBillingHistoryEntry);
+}
+
 export async function beginDreamKeyCheckout(planId: DreamKeyPlanId): Promise<void> {
-  if (planId !== 'one-dreamkey') {
+  const backendPlanIds: Partial<Record<DreamKeyPlanId, string>> = {
+    'one-dreamkey': 'dreamkey_single',
+    'dreamkey-monthly': 'dreamkey_monthly',
+    'dreamkey-yearly': 'dreamkey_yearly',
+  };
+  const backendPlanId = backendPlanIds[planId];
+  if (!backendPlanId) {
     throw new DreamKeyIntegrationPendingError('checkout');
   }
 
@@ -208,7 +286,7 @@ export async function beginDreamKeyCheckout(planId: DreamKeyPlanId): Promise<voi
         Authorization: `Bearer ${data.session.access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ planId: 'dreamkey_single' }),
+      body: JSON.stringify({ planId: backendPlanId }),
     });
   } catch {
     throw new DreamKeyServiceError('CHECKOUT_FAILED', 'Secure checkout is temporarily unavailable. Please try again.');
@@ -248,24 +326,63 @@ export async function getDreamKeyCheckoutStatus(
   if (!checkoutSessionId || checkoutSessionId.length > 255) return null;
 
   const client = await getAuthenticatedClient();
-  const { data, error } = await client
+  const { data: purchase, error: purchaseError } = await client
     .from('dreamkey_purchases')
     .select('status, keys_granted')
     .eq('stripe_checkout_session_id', checkoutSessionId)
     .maybeSingle();
-  if (error) {
+  if (purchaseError) {
     throw new DreamKeyServiceError('QUERY_FAILED', 'Your DREAMKey payment status could not be checked.');
   }
-  if (!data) return null;
-
-  const allowedStatuses = ['pending', 'paid', 'failed', 'cancelled', 'refunded'] as const;
-  if (!allowedStatuses.includes(data.status as typeof allowedStatuses[number])) {
-    throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'The DREAMKey payment service returned an unexpected response.');
+  if (purchase) {
+    const allowedStatuses = ['pending', 'paid', 'failed', 'cancelled', 'refunded'] as const;
+    if (!allowedStatuses.includes(purchase.status as typeof allowedStatuses[number])) {
+      throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'The DREAMKey payment service returned an unexpected response.');
+    }
+    return {
+      kind: 'purchase',
+      status: purchase.status as typeof allowedStatuses[number],
+      keysGranted: getCount(purchase.keys_granted),
+    };
   }
+
+  const { data: subscription, error: subscriptionError } = await client
+    .from('dreamkey_subscriptions')
+    .select('status, keys_per_cycle, dreamkey_subscription_grants(keys_granted)')
+    .eq('stripe_checkout_session_id', checkoutSessionId)
+    .maybeSingle();
+  if (subscriptionError) {
+    throw new DreamKeyServiceError('QUERY_FAILED', 'Your DREAMKey subscription status could not be checked.');
+  }
+  if (!subscription) return null;
+
+  const allowedStatuses = ['pending', 'active', 'past_due', 'cancelled', 'ended'] as const;
+  if (!allowedStatuses.includes(subscription.status as typeof allowedStatuses[number])) {
+    throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'The DREAMKey subscription service returned an unexpected response.');
+  }
+  const grants = Array.isArray(subscription.dreamkey_subscription_grants)
+    ? subscription.dreamkey_subscription_grants
+    : [];
   return {
-    status: data.status as typeof allowedStatuses[number],
-    keysGranted: getCount(data.keys_granted),
+    kind: 'subscription',
+    status: subscription.status as typeof allowedStatuses[number],
+    keysGranted: grants.reduce((total, grant) => {
+      const record = asRecord(grant);
+      return total + (record ? getCount(record.keys_granted) : 0);
+    }, 0),
   };
+}
+
+export async function getMyDreamKeySubscriptions(): Promise<DreamKeySubscription[]> {
+  const client = await getAuthenticatedClient();
+  const { data, error } = await client
+    .from('dreamkey_subscriptions')
+    .select('*')
+    .order('created_at', { ascending: false });
+  if (error) {
+    throw new DreamKeyServiceError('QUERY_FAILED', 'Your DREAMKey subscriptions could not be loaded.');
+  }
+  return (data || []) as DreamKeySubscription[];
 }
 
 export async function getDreamKeyForSubmission(submissionId: string): Promise<DreamKeyEntitlement | null> {
@@ -335,8 +452,10 @@ export async function redeemDreamKeyCode(code: string): Promise<DreamKeyCodeResu
 
 export type {
   DreamKeyBalance,
+  DreamKeyBillingHistoryEntry,
   DreamKeyCheckoutStatus,
   DreamKeyCodeResult,
   DreamKeyCodeValidation,
   DreamKeyEntitlement,
+  DreamKeySubscription,
 } from '../types/dreamKey';

@@ -1,22 +1,23 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, Check, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ExternalLink, FileDown, KeyRound, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import type { DreamKeyDisplayPlan, DreamKeyPlanId } from '../config/dreamKeyPlans';
 import {
   beginDreamKeyCheckout,
   DreamKeyServiceError,
   getDreamKeyBalance,
+  getDreamKeyBillingHistory,
   getDreamKeyCheckoutStatus,
   getDreamKeyPlans,
   redeemDreamKeyCode,
 } from '../services/dreamKeyService';
+import type { DreamKeyBalance, DreamKeyBillingHistoryEntry } from '../types/dreamKey';
 import { BrandMark } from './BrandMark';
 import { DreamKeyMark } from './DreamKeyMark';
 
 interface DreamKeyPlansPageProps {
   onBack: () => void;
+  onStartDreamSheet: () => void;
 }
-
-const CHECKOUT_PENDING_MESSAGE = 'This DREAMKey option is not available for checkout yet. No payment has been taken.';
 
 type CheckoutReturn =
   | { outcome: 'none' }
@@ -27,6 +28,7 @@ interface CheckoutConfirmation {
   message: string;
   confirmed: boolean;
   retryable: boolean;
+  balance: DreamKeyBalance | null;
 }
 
 function readCheckoutReturn(): CheckoutReturn {
@@ -46,31 +48,67 @@ async function loadCheckoutConfirmation(sessionId: string): Promise<CheckoutConf
       message: 'Payment confirmation is still processing. Your DREAMKey will appear automatically after the secure webhook completes.',
       confirmed: false,
       retryable: true,
+      balance: null,
     };
   }
-  if (status.status === 'paid' && status.keysGranted === 1) {
+  if (status.kind === 'purchase' && status.status === 'paid' && status.keysGranted === 1) {
     const balance = await getDreamKeyBalance();
     return {
-      message: `Payment confirmed. Your account has ${balance.available} available DREAMKey${balance.available === 1 ? '' : 's'}.`,
+      message: `Payment confirmed. +1 DREAMKey granted; ${balance.available} currently available.`,
       confirmed: true,
       retryable: false,
+      balance,
     };
   }
-  if (status.status === 'failed') {
+  if (status.kind === 'subscription'
+    && ['active', 'cancelled'].includes(status.status)
+    && status.keysGranted > 0) {
+    const balance = await getDreamKeyBalance();
+    return {
+      message: `Subscription payment confirmed. +${status.keysGranted} DREAMKey${status.keysGranted === 1 ? '' : 's'} granted so far; ${balance.available} currently available.`,
+      confirmed: true,
+      retryable: false,
+      balance,
+    };
+  }
+  if (status.status === 'failed' || status.status === 'past_due') {
     return {
       message: 'The payment was not completed. No DREAMKey has been issued.',
       confirmed: false,
       retryable: false,
+      balance: null,
     };
   }
   return {
     message: 'This checkout is not eligible for a new DREAMKey. Please contact support if you believe this is incorrect.',
     confirmed: false,
     retryable: false,
+    balance: null,
   };
 }
 
-export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
+function formatMoney(amountMinor: number | null, currency: string | null): string {
+  if (amountMinor === null || !currency) return 'Amount unavailable';
+  try {
+    return new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(amountMinor / 100);
+  } catch {
+    return `${currency} ${(amountMinor / 100).toFixed(2)}`;
+  }
+}
+
+function formatPaymentDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? 'Date unavailable'
+    : date.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function formatReference(value: string | null): string {
+  if (!value) return 'Unavailable';
+  return value.length <= 20 ? value : `${value.slice(0, 9)}...${value.slice(-7)}`;
+}
+
+export function DreamKeyPlansPage({ onBack, onStartDreamSheet }: DreamKeyPlansPageProps) {
   const plans = getDreamKeyPlans();
   const [checkoutReturn] = useState<CheckoutReturn>(readCheckoutReturn);
   const [pendingPlanId, setPendingPlanId] = useState<DreamKeyPlanId | null>(null);
@@ -82,7 +120,7 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
     }
     if (checkoutReturn.outcome === 'success') {
       return checkoutReturn.sessionId
-        ? 'Payment completed. Confirming your DREAMKey…'
+        ? 'Payment received. Confirming your DREAMKey…'
         : 'Payment confirmation could not be checked because the checkout reference is missing.';
     }
     return '';
@@ -90,6 +128,28 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
   const [checkingPayment, setCheckingPayment] = useState(checkoutReturn.outcome === 'success' && Boolean(checkoutReturn.sessionId));
   const [checkoutConfirmed, setCheckoutConfirmed] = useState(false);
   const [checkoutRetryable, setCheckoutRetryable] = useState(false);
+  const [balance, setBalance] = useState<DreamKeyBalance | null>(null);
+  const [billingHistory, setBillingHistory] = useState<DreamKeyBillingHistoryEntry[]>([]);
+  const [walletLoading, setWalletLoading] = useState(true);
+  const [walletError, setWalletError] = useState('');
+
+  const refreshWallet = async () => {
+    setWalletLoading(true);
+    setWalletError('');
+    const [balanceResult, historyResult] = await Promise.allSettled([
+      getDreamKeyBalance(),
+      getDreamKeyBillingHistory(),
+    ]);
+    if (balanceResult.status === 'fulfilled') setBalance(balanceResult.value);
+    else setWalletError('Your DREAMKey balance could not be refreshed.');
+    if (historyResult.status === 'fulfilled') setBillingHistory(historyResult.value);
+    else setWalletError(previous => previous || 'Your payment history could not be loaded.');
+    setWalletLoading(false);
+  };
+
+  useEffect(() => {
+    void refreshWallet();
+  }, []);
 
   useEffect(() => {
     if (checkoutReturn.outcome === 'none') return;
@@ -116,6 +176,8 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
           setCommerceMessage(confirmation.message);
           setCheckoutConfirmed(confirmation.confirmed);
           setCheckoutRetryable(confirmation.retryable);
+          if (confirmation.balance) setBalance(confirmation.balance);
+          if (confirmation.confirmed) void refreshWallet();
           if (!confirmation.retryable) return;
         } catch (error) {
           if (cancelled) return;
@@ -145,6 +207,8 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
       setCommerceMessage(confirmation.message);
       setCheckoutConfirmed(confirmation.confirmed);
       setCheckoutRetryable(confirmation.retryable);
+      if (confirmation.balance) setBalance(confirmation.balance);
+      if (confirmation.confirmed) await refreshWallet();
     } catch (error) {
       console.error('Could not confirm DREAMKey checkout status.', error);
       setCommerceMessage('Payment confirmation is temporarily unavailable. No DREAMKey has been issued from this page. Please retry shortly.');
@@ -161,11 +225,6 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
       setCommerceMessage('Teams & Coaches enquiries will be available when the commercial contact route is connected.');
       return;
     }
-    if (plan.id !== 'one-dreamkey') {
-      setCommerceMessage(CHECKOUT_PENDING_MESSAGE);
-      return;
-    }
-
     setPendingPlanId(plan.id);
     try {
       await beginDreamKeyCheckout(plan.id);
@@ -194,6 +253,7 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
         setCommerceMessage(result.keysGranted === 1
           ? '1 DREAMKey has been added to your account.'
           : `${result.keysGranted} DREAMKeys have been added to your account.`);
+        await refreshWallet();
       } else {
         setCommerceMessage('This code is valid and can be applied when secure checkout is connected.');
       }
@@ -208,6 +268,10 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
       setApplyingCode(false);
     }
   };
+
+  const checkoutHistoryEntry = checkoutReturn.outcome === 'success'
+    ? billingHistory.find(entry => entry.checkoutSessionId === checkoutReturn.sessionId) || null
+    : null;
 
   return (
     <main className="min-h-dvh overflow-x-clip bg-stone-50 text-stone-950 dark:bg-[#12110f] dark:text-stone-100">
@@ -243,6 +307,22 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
       </header>
 
       <section aria-labelledby="dreamkey-plans-heading" className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-16">
+        <div className="mb-10 flex flex-col gap-5 rounded-[1.75rem] border border-stone-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-stone-900 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <DreamKeyMark variant="compact" size="md" />
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-400">Your wallet</p>
+              {balance ? (
+                <p className="mt-1 text-2xl font-semibold"><span className="text-emerald-700 dark:text-emerald-400">{balance.available}</span> available <span className="ml-2 text-sm font-medium text-stone-500">- {balance.reserved} reserved</span></p>
+              ) : (
+                <p className="mt-1 text-sm text-stone-500">{walletLoading ? 'Loading DREAMKeys...' : walletError}</p>
+              )}
+            </div>
+          </div>
+          <button type="button" onClick={() => void refreshWallet()} disabled={walletLoading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-stone-200 px-4 text-sm font-bold outline-none transition hover:bg-stone-50 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50 dark:border-white/10 dark:hover:bg-white/5">
+            <RefreshCw size={15} className={walletLoading ? 'animate-spin' : ''} /> Refresh wallet
+          </button>
+        </div>
         <div className="mx-auto max-w-3xl text-center">
           <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-700 dark:text-emerald-400">Choose your path</p>
           <h2 id="dreamkey-plans-heading" className="mt-3 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl">DREAMKeys for the way you plan</h2>
@@ -256,6 +336,27 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
             ? 'mx-auto mt-8 max-w-3xl rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center text-sm font-semibold leading-6 text-emerald-950 dark:border-emerald-300/20 dark:bg-emerald-300/10 dark:text-emerald-100'
             : 'mx-auto mt-8 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-center text-sm font-semibold leading-6 text-amber-950 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-100'} role="status" aria-live="polite">
             <p>{commerceMessage}</p>
+            {checkoutConfirmed ? (
+              <div className="mt-4">
+                {checkoutHistoryEntry ? (
+                  <dl className="mx-auto mb-4 grid max-w-2xl gap-3 rounded-xl border border-emerald-700/10 bg-white/60 p-4 text-left text-xs sm:grid-cols-2 dark:bg-stone-950/20">
+                    <div><dt className="font-bold uppercase tracking-wide text-emerald-800/70 dark:text-emerald-200/70">Plan</dt><dd className="mt-1 font-semibold">{checkoutHistoryEntry.planName} - {checkoutHistoryEntry.kind === 'subscription' ? 'Subscription' : 'One-time'}</dd></div>
+                    <div><dt className="font-bold uppercase tracking-wide text-emerald-800/70 dark:text-emerald-200/70">Payment</dt><dd className="mt-1 font-semibold">{formatMoney(checkoutHistoryEntry.amountMinor, checkoutHistoryEntry.currency)} - {formatPaymentDate(checkoutHistoryEntry.paidAt)}</dd></div>
+                    <div><dt className="font-bold uppercase tracking-wide text-emerald-800/70 dark:text-emerald-200/70">DREAMKeys granted</dt><dd className="mt-1 font-semibold">+{checkoutHistoryEntry.keysGranted}</dd></div>
+                    <div><dt className="font-bold uppercase tracking-wide text-emerald-800/70 dark:text-emerald-200/70">Reference</dt><dd className="mt-1 font-mono">{formatReference(checkoutHistoryEntry.reference)}</dd></div>
+                  </dl>
+                ) : null}
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button type="button" onClick={onStartDreamSheet} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 focus-visible:ring-2 focus-visible:ring-emerald-500"><KeyRound size={16} /> Start DREAMSheet</button>
+                {checkoutHistoryEntry?.receiptUrl ? (
+                  <a href={checkoutHistoryEntry.receiptUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-emerald-700/20 px-4 py-2.5 text-sm font-bold"><ExternalLink size={15} /> View receipt</a>
+                ) : null}
+                {checkoutHistoryEntry?.hostedInvoiceUrl ? (
+                  <a href={checkoutHistoryEntry.hostedInvoiceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-emerald-700/20 px-4 py-2.5 text-sm font-bold"><ExternalLink size={15} /> View invoice</a>
+                ) : null}
+                </div>
+              </div>
+            ) : null}
             {checkoutReturn.outcome === 'success' && checkoutRetryable ? (
               <button
                 type="button"
@@ -348,6 +449,38 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
             </button>
           </form>
         </div>
+
+        <section aria-labelledby="dreamkey-history-heading" className="mt-10 rounded-[2rem] border border-stone-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-stone-900 sm:p-8">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700 dark:text-emerald-400">Payment proof</p>
+              <h2 id="dreamkey-history-heading" className="mt-2 text-2xl font-semibold tracking-tight">DREAMKey payment history</h2>
+            </div>
+            {walletError ? <p role="status" className="text-xs text-amber-700 dark:text-amber-300">{walletError}</p> : null}
+          </div>
+          {walletLoading && billingHistory.length === 0 ? (
+            <p className="mt-6 text-sm text-stone-500">Loading payment history...</p>
+          ) : billingHistory.length === 0 ? (
+            <p className="mt-6 rounded-2xl bg-stone-50 px-5 py-6 text-sm text-stone-500 dark:bg-white/5 dark:text-stone-400">No completed DREAMKey payments yet.</p>
+          ) : (
+            <div className="mt-6 space-y-3">
+              {billingHistory.map(entry => (
+                <article key={entry.id} className="grid gap-4 rounded-2xl border border-stone-200 p-5 dark:border-white/10 md:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,0.7fr))_auto] md:items-center">
+                  <div><p className="font-bold">{entry.planName}</p><p className="mt-1 text-xs text-stone-500">{entry.kind === 'subscription' ? 'Subscription payment' : 'One-time payment'} - {entry.keysGranted} key{entry.keysGranted === 1 ? '' : 's'}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase tracking-wide text-stone-400">Amount</p><p className="mt-1 text-sm font-semibold">{formatMoney(entry.amountMinor, entry.currency)}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase tracking-wide text-stone-400">Paid</p><p className="mt-1 text-sm">{formatPaymentDate(entry.paidAt)}</p></div>
+                  <div><p className="text-[10px] font-bold uppercase tracking-wide text-stone-400">Reference</p><p className="mt-1 font-mono text-xs">{formatReference(entry.reference)}</p></div>
+                  <div className="flex flex-wrap gap-2 md:justify-end">
+                    {entry.receiptUrl ? <a href={entry.receiptUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-bold hover:bg-stone-50 dark:border-white/10 dark:hover:bg-white/5"><ExternalLink size={13} /> Receipt</a> : null}
+                    {entry.hostedInvoiceUrl ? <a href={entry.hostedInvoiceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-bold hover:bg-stone-50 dark:border-white/10 dark:hover:bg-white/5"><ExternalLink size={13} /> Invoice</a> : null}
+                    {entry.invoicePdfUrl ? <a href={entry.invoicePdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs font-bold hover:bg-stone-50 dark:border-white/10 dark:hover:bg-white/5"><FileDown size={13} /> PDF</a> : null}
+                    {!entry.receiptUrl && !entry.hostedInvoiceUrl && !entry.invoicePdfUrl ? <span className="text-xs text-stone-400">Proof unavailable</span> : null}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
 
         <div className="mt-10 flex flex-col items-center justify-center gap-3 text-center text-xs leading-5 text-stone-500 dark:text-stone-400 sm:flex-row">
           <span className="inline-flex items-center gap-2"><ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" /> No payment details are collected on this page.</span>

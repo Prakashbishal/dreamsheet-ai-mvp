@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Calendar, Clock3, Download, FileText, LogOut, Mail, Plus, RefreshCw, UserRound } from 'lucide-react';
+import { ArrowRight, Calendar, Clock3, Download, FileText, KeyRound, LogOut, Mail, Plus, RefreshCw, UserRound } from 'lucide-react';
+import { getDreamKeyBalance } from '../services/dreamKeyService';
+import type { DreamKeyBalance } from '../types/dreamKey';
 import { getMyDreamSheets, getMyRecentDrafts, type SavedDreamSheet } from '../services/submissionService';
 import { BrandMark } from './BrandMark';
 import { DreamKeyMark } from './DreamKeyMark';
@@ -57,16 +59,20 @@ export function DreamSheetDashboard({ userEmail, refreshToken, onCreate, onOpenD
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [draftError, setDraftError] = useState('');
+  const [dreamKeyBalance, setDreamKeyBalance] = useState<DreamKeyBalance | null>(null);
+  const [dreamKeyError, setDreamKeyError] = useState('');
   const [signingOut, setSigningOut] = useState(false);
 
   const loadSubmissions = async () => {
     setLoading(true);
     setError('');
     setDraftError('');
+    setDreamKeyError('');
 
-    const [completedResult, draftResult] = await Promise.allSettled([
+    const [completedResult, draftResult, balanceResult] = await Promise.allSettled([
       getMyDreamSheets(),
       getMyRecentDrafts(),
+      getDreamKeyBalance(),
     ]);
 
     if (completedResult.status === 'fulfilled') {
@@ -79,6 +85,13 @@ export function DreamSheetDashboard({ userEmail, refreshToken, onCreate, onOpenD
       setDrafts(draftResult.value);
     } else {
       setDraftError(draftResult.reason instanceof Error ? draftResult.reason.message : 'Your unfinished drafts could not be loaded.');
+    }
+
+    if (balanceResult.status === 'fulfilled') {
+      setDreamKeyBalance(balanceResult.value);
+    } else {
+      setDreamKeyBalance(null);
+      setDreamKeyError('Balance temporarily unavailable');
     }
 
     setLoading(false);
@@ -142,7 +155,14 @@ export function DreamSheetDashboard({ userEmail, refreshToken, onCreate, onOpenD
               <DreamKeyMark variant="compact" tone="light" size="sm" />
               <div className="min-w-0">
                 <p className="text-sm font-bold text-white">DREAMKeys</p>
-                <p className="mt-1 text-xs leading-5 text-stone-400">Your DREAMKeys will unlock complete DREAMSheet journeys when commercial access launches.</p>
+                {dreamKeyBalance ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-300">
+                    <span className="inline-flex items-center gap-1.5 font-bold text-emerald-300"><KeyRound size={13} /> {dreamKeyBalance.available} available</span>
+                    <span>{dreamKeyBalance.reserved} reserved</span>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs leading-5 text-stone-400">{dreamKeyError || 'Loading your secure DREAMKey wallet...'}</p>
+                )}
               </div>
             </div>
             <button
@@ -150,7 +170,7 @@ export function DreamSheetDashboard({ userEmail, refreshToken, onCreate, onOpenD
               onClick={onOpenDreamKeys}
               className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-300 outline-none transition hover:border-emerald-300/50 hover:bg-emerald-400/15 hover:text-emerald-200 focus-visible:ring-2 focus-visible:ring-emerald-400"
             >
-              Get DREAMKeys
+              Manage DREAMKeys
             </button>
           </div>
         </div>

@@ -51,6 +51,14 @@ import { WaterfallRoadmap } from './components/WaterfallRoadmap';
 import { BrandMark } from './components/BrandMark';
 import { PrintableDreamSheet } from './components/PrintableDreamSheet';
 import { recordCriticalFailure, recordCriticalSuccess } from './services/adminAlertService';
+import { DreamKeyUnlockGate } from './components/DreamKeyUnlockGate';
+import {
+  DreamKeyServiceError,
+  getDreamKeyBalance,
+  getDreamKeyForSubmission,
+  reserveDreamKey,
+} from './services/dreamKeyService';
+import type { DreamKeyBalance } from './types/dreamKey';
 
 const POSSIBLE_DOMAINS = [
   { name: "CAREER & BUSINESS", description: "Professional growth, vocational goals and fulfilling work" },
@@ -232,7 +240,17 @@ interface AppProps {
   onCloudDraftCreated?: (journeyToken: string, draftId: string) => void;
   onCloudDraftCompleted?: (journeyToken: string) => void;
   onCloudDraftReset?: () => void;
+  onGetDreamKeys?: () => void;
 }
+
+const DREAMKEY_PROTECTED_STEPS = new Set<CoachingStep>([
+  CoachingStep.RATINGS,
+  CoachingStep.END_GOALS,
+  CoachingStep.AFFIRMATIONS,
+  CoachingStep.MASTERPLAN,
+  CoachingStep.COACH_REVIEW,
+  CoachingStep.CONSOLIDATED_PLAN,
+]);
 
 const CLOUD_AUTOSAVE_DELAY_MS = 2_500;
 
@@ -244,6 +262,7 @@ export default function App({
   onCloudDraftCreated,
   onCloudDraftCompleted,
   onCloudDraftReset,
+  onGetDreamKeys,
 }: AppProps = {}) {
   // Helper for lazy initial state from local storage
   const getInitialState = (key: string, defaultValue: any) => {
@@ -368,6 +387,12 @@ export default function App({
     });
   });
   const [currentDiscoveryIndex, setCurrentDiscoveryIndex] = useState(() => getInitialSessionState('currentDiscoveryIndex', 0));
+  const [dreamKeyAccess, setDreamKeyAccess] = useState(false);
+  const dreamKeyAccessRef = useRef(false);
+  const [dreamKeyChecking, setDreamKeyChecking] = useState(Boolean(activeCloudDraftId));
+  const [dreamKeyUnlocking, setDreamKeyUnlocking] = useState(false);
+  const [dreamKeyBalance, setDreamKeyBalance] = useState<DreamKeyBalance | null>(null);
+  const [dreamKeyMessage, setDreamKeyMessage] = useState('');
 
   // Intro / Mindfulness State
   const [distractions, setDistractions] = useState<string[]>(() => getInitialState('distractions', []));
@@ -849,6 +874,11 @@ export default function App({
   };
 
   const skipToStep = (newStep: CoachingStep, historyMode: 'push' | 'replace' | 'none' = 'push') => {
+    if (DREAMKEY_PROTECTED_STEPS.has(newStep) && !dreamKeyAccessRef.current) {
+      newStep = CoachingStep.DOMAIN;
+      setShowDomainVisionResults(false);
+      setDreamKeyMessage('Unlock this Discovery Session before continuing.');
+    }
     // If skipping to a step that requires data, populate some defaults if empty
     if (newStep !== CoachingStep.CLEAR_SPACE && newStep !== CoachingStep.WELCOME) {
       if (!clientName) setClientName('');
@@ -893,6 +923,92 @@ export default function App({
     setTimeout(() => {
       scrollViewportToTop('smooth');
     }, 100);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    dreamKeyAccessRef.current = false;
+    setDreamKeyAccess(false);
+    setDreamKeyMessage('');
+
+    if (!activeCloudDraftId) {
+      setDreamKeyChecking(false);
+      if (DREAMKEY_PROTECTED_STEPS.has(stepRef.current)) {
+        skipToStep(CoachingStep.DOMAIN, 'replace');
+      }
+      void getDreamKeyBalance()
+        .then(value => { if (!cancelled) setDreamKeyBalance(value); })
+        .catch(() => { if (!cancelled) setDreamKeyBalance(null); });
+      return () => { cancelled = true; };
+    }
+
+    setDreamKeyChecking(true);
+    void Promise.all([
+      getDreamKeyForSubmission(activeCloudDraftId),
+      getDreamKeyBalance().catch(() => null),
+    ]).then(([entitlement, balance]) => {
+      if (cancelled) return;
+      const hasAccess = entitlement?.status === 'reserved' || entitlement?.status === 'consumed';
+      dreamKeyAccessRef.current = hasAccess;
+      setDreamKeyAccess(hasAccess);
+      setDreamKeyBalance(balance);
+      if (!hasAccess && DREAMKEY_PROTECTED_STEPS.has(stepRef.current)) {
+        skipToStep(CoachingStep.DOMAIN, 'replace');
+      }
+    }).catch(error => {
+      if (cancelled) return;
+      console.warn('DREAMKey entitlement could not be restored.', error);
+      setDreamKeyMessage('Your DREAMKey access could not be checked. Please try again.');
+      if (DREAMKEY_PROTECTED_STEPS.has(stepRef.current)) skipToStep(CoachingStep.DOMAIN, 'replace');
+    }).finally(() => {
+      if (!cancelled) setDreamKeyChecking(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeCloudDraftId]);
+
+  const handleDreamKeyUnlock = async () => {
+    if (dreamKeyUnlocking || dreamKeyChecking) return;
+    if (!activeCloudDraftId) {
+      setDreamKeyMessage('Saving secure draft... Your unlock button will be ready shortly.');
+      return;
+    }
+    if (dreamKeyBalance?.available === 0) {
+      onGetDreamKeys?.();
+      return;
+    }
+
+    setDreamKeyUnlocking(true);
+    setDreamKeyMessage('');
+    try {
+      const existing = await getDreamKeyForSubmission(activeCloudDraftId);
+      const entitlement = existing?.status === 'reserved' || existing?.status === 'consumed'
+        ? existing
+        : await reserveDreamKey(activeCloudDraftId);
+      const hasAccess = entitlement.status === 'reserved' || entitlement.status === 'consumed';
+      if (!hasAccess) throw new Error('DREAMKey reservation did not grant access.');
+
+      dreamKeyAccessRef.current = true;
+      setDreamKeyMessage('DREAMKey secured');
+      setDreamKeyAccess(true);
+      setDreamKeyBalance(await getDreamKeyBalance().catch(() => null));
+      // TODO(DREAMKey animation): run the approved unlock sequence here, after server reservation succeeds and before Discovery is revealed.
+    } catch (error) {
+      console.warn('DREAMKey reservation failed.', error);
+      const refreshedBalance = await getDreamKeyBalance().catch(() => null);
+      setDreamKeyBalance(refreshedBalance);
+      if (refreshedBalance?.available === 0) {
+        setDreamKeyMessage('You need an available DREAMKey to unlock this Discovery Session.');
+        onGetDreamKeys?.();
+        return;
+      }
+      if (error instanceof DreamKeyServiceError) {
+        setDreamKeyMessage(error.message);
+      } else {
+        setDreamKeyMessage('This DREAMKey could not be reserved. Your draft is safe; please try again.');
+      }
+    } finally {
+      setDreamKeyUnlocking(false);
+    }
   };
 
   useEffect(() => {
@@ -3194,8 +3310,24 @@ export default function App({
                       </section>
                     )}
 
+                    {/* D: Discovery access gate. The actual questions are not mounted until server-backed entitlement is confirmed. */}
+                    {selectedRoles.length > 0 && !dreamKeyAccess && (
+                      <div ref={domainQuestionsRef} className="scroll-mt-6 border-t border-stone-100 pt-10">
+                        <DreamKeyUnlockGate
+                          selectedDomainTitle={selectedRoles[0]}
+                          availableKeys={dreamKeyBalance?.available ?? null}
+                          checking={dreamKeyChecking}
+                          unlocking={dreamKeyUnlocking}
+                          message={dreamKeyMessage}
+                          draftReady={Boolean(activeCloudDraftId)}
+                          onUnlockWithDreamKey={() => void handleDreamKeyUnlock()}
+                          onGetDreamKey={() => onGetDreamKeys?.()}
+                        />
+                      </div>
+                    )}
+
                     {/* D: Discovery Phase */}
-                    {selectedRoles.length > 0 && !showDomainVisionResults && (
+                    {selectedRoles.length > 0 && !showDomainVisionResults && dreamKeyAccess && (
                       <section ref={domainQuestionsRef} className="scroll-mt-6 space-y-10 border-t border-stone-100 pt-10">
                         <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-4">
                           <p className="text-stone-600 text-sm max-w-2xl mx-auto md:mx-0 leading-relaxed">
@@ -3301,7 +3433,7 @@ export default function App({
                     )}
 
                     {/* Vision & Focus Areas Results */}
-                    {showDomainVisionResults && (
+                    {showDomainVisionResults && dreamKeyAccess && (
                       <section className="space-y-12 border-t border-stone-100 pt-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
                         <div className="space-y-8 max-w-2xl mx-auto md:mx-0">
                           <div className="flex flex-col items-center md:items-start text-center md:text-left space-y-2">
@@ -3465,7 +3597,7 @@ export default function App({
               </motion.div>
             )}
 
-            {step === CoachingStep.RATINGS && (
+            {step === CoachingStep.RATINGS && dreamKeyAccess && (
               <motion.div 
                 key="domains"
                 initial={{ opacity: 0, y: 20 }}
@@ -3722,7 +3854,7 @@ export default function App({
             </motion.div>
             )}
 
-            {step === CoachingStep.END_GOALS && (
+            {step === CoachingStep.END_GOALS && dreamKeyAccess && (
               <motion.div 
                 key="end-goals"
                 initial={{ opacity: 0, x: 20 }}
@@ -3937,7 +4069,7 @@ export default function App({
               </motion.div>
             )}
 
-            {step === CoachingStep.AFFIRMATIONS && (
+            {step === CoachingStep.AFFIRMATIONS && dreamKeyAccess && (
               <motion.div 
                 key="affirmations"
                 initial={{ opacity: 0, scale: 0.98 }}
@@ -4049,7 +4181,7 @@ export default function App({
             )}
 
             {/* STEP M: MASTERPLAN */}
-            {step === CoachingStep.MASTERPLAN && (
+            {step === CoachingStep.MASTERPLAN && dreamKeyAccess && (
               <motion.div 
                 key="final"
                 initial={{ opacity: 0 }}
@@ -4598,7 +4730,7 @@ export default function App({
             )}
 
             {/* STEP 7: CONSOLIDATED PLAN VIEW */}
-            {step === CoachingStep.CONSOLIDATED_PLAN && (
+            {step === CoachingStep.CONSOLIDATED_PLAN && dreamKeyAccess && (
               <motion.div 
                 key="consolidated"
                 initial={{ opacity: 0, y: 10 }}
@@ -4862,7 +4994,7 @@ export default function App({
 
             {/* EXECUTION DASHBOARD */}
             {/* STEP 6: COACH REVIEW MODE */}
-            {step === CoachingStep.COACH_REVIEW && (
+            {step === CoachingStep.COACH_REVIEW && dreamKeyAccess && (
               <motion.div 
                 key="coach-review"
                 initial={{ opacity: 0, scale: 0.98 }}

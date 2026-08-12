@@ -61,8 +61,10 @@ export interface DreamKeySubscription {
   status: DreamKeySubscriptionStatus;
   currency: string | null;
   keys_per_cycle: number | null;
+  price_id: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  stripe_checkout_session_id: string | null;
   current_period_start: string | null;
   current_period_end: string | null;
   created_at: string;
@@ -146,8 +148,28 @@ export interface DreamKeyBalance {
 }
 
 export interface DreamKeyCheckoutStatus {
-  status: DreamKeyPurchaseStatus;
+  kind: 'purchase' | 'subscription';
+  status: DreamKeyPurchaseStatus | DreamKeySubscriptionStatus;
   keysGranted: number;
+}
+
+export type DreamKeyBillingHistoryKind = 'one_time' | 'subscription';
+
+export interface DreamKeyBillingHistoryEntry {
+  id: string;
+  kind: DreamKeyBillingHistoryKind;
+  checkoutSessionId: string | null;
+  planName: string;
+  billingType: DreamKeyBillingType;
+  status: DreamKeyPurchaseStatus | 'paid';
+  amountMinor: number | null;
+  currency: string | null;
+  paidAt: string;
+  reference: string | null;
+  keysGranted: number;
+  receiptUrl: string | null;
+  hostedInvoiceUrl: string | null;
+  invoicePdfUrl: string | null;
 }
 
 export type DreamKeyCodeValidation =

@@ -3,9 +3,13 @@ import { DreamKeyMark } from './DreamKeyMark';
 
 interface DreamKeyUnlockGateProps {
   selectedDomainTitle: string;
+  availableKeys: number | null;
+  checking: boolean;
+  unlocking: boolean;
+  message?: string;
+  draftReady: boolean;
   onUnlockWithDreamKey: () => void;
   onGetDreamKey: () => void;
-  onEnterCode: () => void;
 }
 
 const PREVIEW_QUESTIONS = [
@@ -16,10 +20,15 @@ const PREVIEW_QUESTIONS = [
 
 export function DreamKeyUnlockGate({
   selectedDomainTitle,
+  availableKeys,
+  checking,
+  unlocking,
+  message,
+  draftReady,
   onUnlockWithDreamKey,
   onGetDreamKey,
-  onEnterCode,
 }: DreamKeyUnlockGateProps) {
+  const hasAvailableKey = availableKeys !== null && availableKeys > 0;
   return (
     <section aria-labelledby="dreamkey-unlock-heading" className="relative overflow-hidden rounded-[2rem] border border-stone-200 bg-white shadow-2xl shadow-stone-900/10 dark:border-white/10 dark:bg-stone-900 dark:text-stone-100 dark:shadow-black/30">
       <div aria-hidden="true" className="pointer-events-none select-none p-6 opacity-45 blur-[3px] sm:p-8">
@@ -42,21 +51,27 @@ export function DreamKeyUnlockGate({
           <div className="mx-auto mt-5 w-fit"><DreamKeyMark variant="compact" size="lg" /></div>
           <h2 id="dreamkey-unlock-heading" className="mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">Unlock your Discovery Session</h2>
           <p className="mt-3 text-sm leading-6 text-stone-600 dark:text-stone-400">Use 1 DREAMKey to unlock the complete {selectedDomainTitle} journey, including discovery, goals, actions and your finished strategic plan.</p>
+          <p className="mt-4 text-sm font-bold text-emerald-700 dark:text-emerald-400">
+            {checking ? 'Checking your wallet...' : availableKeys === null ? 'Wallet temporarily unavailable' : `${availableKeys} DREAMKey${availableKeys === 1 ? '' : 's'} available`}
+          </p>
+          {message ? <p role="status" className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-xs font-semibold leading-5 text-amber-900 dark:bg-amber-300/10 dark:text-amber-200">{message}</p> : null}
           <button
             type="button"
             onClick={onUnlockWithDreamKey}
-            className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:focus-visible:ring-offset-stone-900"
+            disabled={checking || unlocking || !draftReady}
+            className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white outline-none transition hover:bg-emerald-700 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-55 dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:focus-visible:ring-offset-stone-900"
           >
-            <KeyRound size={17} /> Unlock with a DREAMKey
+            <KeyRound size={17} /> {unlocking ? 'Securing your DREAMKey...' : !draftReady ? 'Saving secure draft...' : availableKeys === null ? 'Try secure unlock' : hasAvailableKey ? 'Use 1 DREAMKey' : 'Get a DREAMKey'}
           </button>
           <button
             type="button"
             onClick={onGetDreamKey}
+            disabled={checking || unlocking}
             className="mt-3 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-stone-200 px-5 py-3 text-sm font-bold text-stone-800 outline-none transition hover:bg-stone-50 focus-visible:ring-2 focus-visible:ring-emerald-500 dark:border-white/10 dark:text-stone-200 dark:hover:bg-white/5"
           >
-            Get a DREAMKey <ArrowRight size={16} />
+            {hasAvailableKey ? 'Manage DREAMKeys' : 'Get a DREAMKey'} <ArrowRight size={16} />
           </button>
-          <button type="button" onClick={onEnterCode} className="mt-4 rounded-lg px-3 py-2 text-sm font-bold text-emerald-700 outline-none hover:text-emerald-800 focus-visible:ring-2 focus-visible:ring-emerald-500 dark:text-emerald-400 dark:hover:text-emerald-300">
+          <button type="button" onClick={onGetDreamKey} disabled={checking || unlocking} className="mt-4 rounded-lg px-3 py-2 text-sm font-bold text-emerald-700 outline-none hover:text-emerald-800 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:opacity-50 dark:text-emerald-400 dark:hover:text-emerald-300">
             Have a DREAMKey code?
           </button>
         </div>

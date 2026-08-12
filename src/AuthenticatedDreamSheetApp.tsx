@@ -300,7 +300,7 @@ export default function AuthenticatedDreamSheetApp() {
   const handleCloudDraftCompleted = useCallback((journeyToken: string) => {
     const current = cloudDraftJourneyRef.current;
     if (!current || current.journeyToken !== journeyToken) return;
-    storeCloudDraftJourney({ ...current, draftId: null, autosaveStopped: true });
+    storeCloudDraftJourney({ ...current, autosaveStopped: true });
   }, [storeCloudDraftJourney]);
 
   const resetCloudDraftJourney = useCallback(() => {
@@ -527,8 +527,22 @@ export default function AuthenticatedDreamSheetApp() {
     setOpeningDraft(false);
     setSavedDreamSheet(null);
     setShellError('');
-    pushShellHistoryState({ view: 'dreamkeys', fromDashboard: true });
+    pushShellHistoryState({ view: 'dreamkeys', fromDashboard: view === 'dashboard' });
     setView('dreamkeys');
+  };
+
+  const startOrResumeFromDreamKeys = () => {
+    const hasActiveJourney = sessionStorage.getItem(ACTIVE_CREATION_KEY) === 'true'
+      && cloudDraftJourneyRef.current?.autosaveStopped !== true;
+    if (!hasActiveJourney) {
+      startNewDreamSheet();
+      return;
+    }
+    activateCloudDraftJourney();
+    setSavedDreamSheet(null);
+    setShellError('');
+    pushShellHistoryState({ view: 'journey' });
+    setView('journey');
   };
 
   if (loading) {
@@ -541,7 +555,7 @@ export default function AuthenticatedDreamSheetApp() {
   }
 
   if (view === 'dreamkeys') {
-    return <DreamKeyPlansPage onBack={returnToDashboard} />;
+    return <DreamKeyPlansPage onBack={returnToDashboard} onStartDreamSheet={startOrResumeFromDreamKeys} />;
   }
 
   if (view === 'journey') {
@@ -555,6 +569,7 @@ export default function AuthenticatedDreamSheetApp() {
           onCloudDraftCreated={handleCloudDraftCreated}
           onCloudDraftCompleted={handleCloudDraftCompleted}
           onCloudDraftReset={resetCloudDraftJourney}
+          onGetDreamKeys={openDreamKeys}
         />
         <nav aria-label="Account navigation" className="fixed bottom-4 right-4 z-[10050] flex gap-2 rounded-2xl border border-stone-200 bg-white/95 p-2 shadow-2xl backdrop-blur">
           <button type="button" onClick={returnToDashboard} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"><LayoutDashboard size={15} /> My DREAMSheets</button>
