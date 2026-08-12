@@ -12,9 +12,13 @@ const HANDLED_EVENTS = new Set<Stripe.Event.Type>([
   'checkout.session.completed',
   'checkout.session.async_payment_succeeded',
   'checkout.session.async_payment_failed',
+  'invoice.paid',
+  'invoice.payment_failed',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
 ]);
 
-interface VerifiedCheckout {
+interface VerifiedOneTimeCheckout {
   session: Stripe.Checkout.Session;
   purchaseId: string;
   paymentIntentId: string | null;
@@ -25,6 +29,17 @@ interface VerifiedCheckout {
   netAmountMinor: number;
 }
 
+interface VerifiedStripeSubscription {
+  localSubscriptionId: string;
+  stripeSubscriptionId: string;
+  stripeCustomerId: string;
+  stripePriceId: string;
+  currency: string;
+  periodStart: number;
+  periodEnd: number;
+  subscription: Stripe.Subscription;
+}
+
 function json(status: number, body: Record<string, unknown>): Response {
   return Response.json(body, {
     status,
@@ -32,31 +47,41 @@ function json(status: number, body: Record<string, unknown>): Response {
   });
 }
 
-function getExpandedPriceId(lineItem: Stripe.LineItem): string | null {
-  const price = lineItem.price;
-  if (!price) return null;
-  return typeof price === 'string' ? price : price.id;
+function objectId(value: { id: string } | string | null): string | null {
+  if (!value) return null;
+  return typeof value === 'string' ? value : value.id;
 }
 
-function getPaymentIntentId(session: Stripe.Checkout.Session): string | null {
-  if (!session.payment_intent) return null;
-  return typeof session.payment_intent === 'string'
-    ? session.payment_intent
-    : session.payment_intent.id;
+function checkoutLinePriceId(lineItem: Stripe.LineItem): string | null {
+  return objectId(lineItem.price);
 }
 
-async function verifyCheckoutSession(
+function invoiceLinePriceId(lineItem: Stripe.InvoiceLineItem): string | null {
+  return objectId(lineItem.pricing?.price_details?.price || null);
+}
+
+function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
+  return objectId(invoice.parent?.subscription_details?.subscription || null);
+}
+
+function expectedInterval(planCode: string): 'month' | 'year' | null {
+  if (planCode === 'dreamkey_monthly') return 'month';
+  if (planCode === 'dreamkey_yearly') return 'year';
+  return null;
+}
+
+async function verifyOneTimeCheckoutSession(
   stripe: Stripe,
   supabase: SupabaseClient,
   sessionId: string,
-): Promise<VerifiedCheckout> {
+): Promise<VerifiedOneTimeCheckout> {
   const session = await stripe.checkout.sessions.retrieve(sessionId, {
     expand: ['line_items.data.price'],
   });
   const metadata = session.metadata;
   const lineItems = session.line_items?.data;
   const lineItem = lineItems?.[0];
-  const stripePriceId = lineItem ? getExpandedPriceId(lineItem) : null;
+  const stripePriceId = lineItem ? checkoutLinePriceId(lineItem) : null;
   const currency = session.currency?.toUpperCase();
   const grossAmountMinor = session.amount_subtotal;
   const discountAmountMinor = session.total_details?.amount_discount;
@@ -85,7 +110,7 @@ async function verifyCheckoutSession(
     || taxAmountMinor !== 0
     || shippingAmountMinor !== 0
     || grossAmountMinor! - discountAmountMinor! !== netAmountMinor) {
-    throw new Error('Stripe checkout verification failed.');
+    throw new Error('Stripe one-time checkout verification failed.');
   }
 
   const { data: purchase, error } = await supabase
@@ -100,13 +125,13 @@ async function verifyCheckoutSession(
     || purchase.plan_id !== metadata.dreamkey_plan_id
     || purchase.price_id !== metadata.dreamkey_price_id
     || purchase.provider !== 'stripe') {
-    throw new Error('DREAMKey purchase verification failed.');
+    throw new Error('DREAMKey one-time purchase verification failed.');
   }
 
   return {
     session,
     purchaseId: purchase.id,
-    paymentIntentId: getPaymentIntentId(session),
+    paymentIntentId: objectId(session.payment_intent),
     stripePriceId,
     currency,
     grossAmountMinor: grossAmountMinor!,
@@ -115,14 +140,11 @@ async function verifyCheckoutSession(
   };
 }
 
-async function fulfilPaidCheckout(
+async function fulfilPaidOneTimeCheckout(
   supabase: SupabaseClient,
-  checkout: VerifiedCheckout,
+  checkout: VerifiedOneTimeCheckout,
 ): Promise<void> {
-  if (checkout.session.payment_status !== 'paid') {
-    throw new Error('Stripe checkout is not paid.');
-  }
-
+  if (checkout.session.payment_status !== 'paid') throw new Error('Stripe checkout is not paid.');
   const { error } = await supabase.rpc('fulfil_dreamkey_one_time_purchase', {
     p_checkout_session_id: checkout.session.id,
     p_payment_intent_id: checkout.paymentIntentId,
@@ -132,12 +154,12 @@ async function fulfilPaidCheckout(
     p_discount_amount_minor: checkout.discountAmountMinor,
     p_net_amount_minor: checkout.netAmountMinor,
   });
-  if (error) throw new Error('Atomic DREAMKey fulfilment failed.');
+  if (error) throw new Error('Atomic DREAMKey one-time fulfilment failed.');
 }
 
-async function markCheckoutFailed(
+async function markOneTimeCheckoutFailed(
   supabase: SupabaseClient,
-  checkout: VerifiedCheckout,
+  checkout: VerifiedOneTimeCheckout,
 ): Promise<void> {
   const { error } = await supabase
     .from('dreamkey_purchases')
@@ -145,7 +167,213 @@ async function markCheckoutFailed(
     .eq('id', checkout.purchaseId)
     .eq('stripe_checkout_session_id', checkout.session.id)
     .eq('status', 'pending');
-  if (error) throw new Error('DREAMKey failure status update failed.');
+  if (error) throw new Error('DREAMKey purchase failure update failed.');
+}
+
+async function verifyStripeSubscription(
+  stripe: Stripe,
+  supabase: SupabaseClient,
+  subscriptionId: string,
+): Promise<VerifiedStripeSubscription> {
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
+    expand: ['items.data.price'],
+  });
+  const metadata = subscription.metadata;
+  const item = subscription.items.data[0];
+  const customerId = objectId(subscription.customer);
+  const interval = expectedInterval(metadata.dreamkey_plan_code);
+  if (subscription.livemode
+    || !metadata.dreamkey_subscription_id
+    || !metadata.supabase_user_id
+    || !metadata.dreamkey_plan_id
+    || !metadata.dreamkey_price_id
+    || !metadata.stripe_price_id
+    || !interval
+    || subscription.items.data.length !== 1
+    || item?.quantity !== 1
+    || item.price.id !== metadata.stripe_price_id
+    || item.price.type !== 'recurring'
+    || item.price.recurring?.interval !== interval
+    || item.price.recurring.interval_count !== 1
+    || item.price.recurring.usage_type !== 'licensed'
+    || !customerId) {
+    throw new Error('Stripe subscription verification failed.');
+  }
+
+  const { data: local, error } = await supabase
+    .from('dreamkey_subscriptions')
+    .select('id, user_id, plan_id, price_id, currency, stripe_customer_id, stripe_subscription_id')
+    .eq('id', metadata.dreamkey_subscription_id)
+    .maybeSingle();
+  if (error
+    || !local
+    || local.user_id !== metadata.supabase_user_id
+    || local.plan_id !== metadata.dreamkey_plan_id
+    || local.price_id !== metadata.dreamkey_price_id
+    || local.currency !== item.price.currency.toUpperCase()
+    || (local.stripe_customer_id && local.stripe_customer_id !== customerId)
+    || (local.stripe_subscription_id && local.stripe_subscription_id !== subscription.id)) {
+    throw new Error('Local DREAMKey subscription verification failed.');
+  }
+
+  return {
+    localSubscriptionId: local.id,
+    stripeSubscriptionId: subscription.id,
+    stripeCustomerId: customerId,
+    stripePriceId: item.price.id,
+    currency: item.price.currency.toUpperCase(),
+    periodStart: item.current_period_start,
+    periodEnd: item.current_period_end,
+    subscription,
+  };
+}
+
+async function bindStripeSubscription(
+  supabase: SupabaseClient,
+  verified: VerifiedStripeSubscription,
+): Promise<void> {
+  const { error } = await supabase.rpc('bind_dreamkey_stripe_subscription', {
+    p_local_subscription_id: verified.localSubscriptionId,
+    p_stripe_subscription_id: verified.stripeSubscriptionId,
+    p_stripe_customer_id: verified.stripeCustomerId,
+  });
+  if (error) throw new Error('DREAMKey subscription binding failed.');
+}
+
+async function verifySubscriptionCheckout(
+  stripe: Stripe,
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<VerifiedStripeSubscription> {
+  const session = await stripe.checkout.sessions.retrieve(sessionId, {
+    expand: ['subscription', 'line_items.data.price'],
+  });
+  const metadata = session.metadata;
+  const lineItems = session.line_items?.data;
+  const lineItem = lineItems?.[0];
+  const subscriptionId = objectId(session.subscription);
+  const customerId = objectId(session.customer);
+  if (session.livemode
+    || session.mode !== 'subscription'
+    || !subscriptionId
+    || !customerId
+    || !metadata?.dreamkey_subscription_id
+    || session.client_reference_id !== metadata.dreamkey_subscription_id
+    || !lineItems
+    || lineItems.length !== 1
+    || lineItem?.quantity !== 1
+    || checkoutLinePriceId(lineItem) !== metadata.stripe_price_id) {
+    throw new Error('Stripe subscription Checkout verification failed.');
+  }
+
+  const verified = await verifyStripeSubscription(stripe, supabase, subscriptionId);
+  if (verified.localSubscriptionId !== metadata.dreamkey_subscription_id
+    || verified.stripeCustomerId !== customerId) {
+    throw new Error('Stripe subscription Checkout metadata mismatch.');
+  }
+  return verified;
+}
+
+async function fulfilPaidSubscriptionInvoice(
+  stripe: Stripe,
+  supabase: SupabaseClient,
+  invoiceId: string,
+  eventId: string,
+): Promise<void> {
+  const invoice = await stripe.invoices.retrieve(invoiceId);
+  const subscriptionId = getInvoiceSubscriptionId(invoice);
+  const customerId = objectId(invoice.customer);
+  if (invoice.livemode || invoice.status !== 'paid' || !subscriptionId || !customerId) {
+    throw new Error('Stripe invoice is not a paid subscription invoice.');
+  }
+
+  const verified = await verifyStripeSubscription(stripe, supabase, subscriptionId);
+  if (verified.stripeCustomerId !== customerId || invoice.currency.toUpperCase() !== verified.currency) {
+    throw new Error('Stripe invoice customer or currency mismatch.');
+  }
+
+  const invoiceLines = await stripe.invoices.listLineItems(invoice.id, {
+    limit: 100,
+    expand: ['data.pricing.price_details.price'],
+  });
+  const matchingLines = invoiceLines.data.filter(line => (
+    line.parent?.type === 'subscription_item_details'
+    && line.parent.subscription_item_details?.subscription === subscriptionId
+    && line.parent.subscription_item_details.proration === false
+    && line.quantity === 1
+    && invoiceLinePriceId(line) === verified.stripePriceId
+  ));
+  if (matchingLines.length !== 1) throw new Error('Stripe invoice price verification failed.');
+
+  await bindStripeSubscription(supabase, verified);
+  const period = matchingLines[0].period;
+  const { error } = await supabase.rpc('fulfil_dreamkey_subscription_invoice', {
+    p_stripe_subscription_id: verified.stripeSubscriptionId,
+    p_stripe_customer_id: verified.stripeCustomerId,
+    p_stripe_invoice_id: invoice.id,
+    p_stripe_event_id: eventId,
+    p_invoice_paid: invoice.status === 'paid',
+    p_stripe_price_id: verified.stripePriceId,
+    p_currency: verified.currency,
+    p_billing_period_start: new Date(period.start * 1000).toISOString(),
+    p_billing_period_end: new Date(period.end * 1000).toISOString(),
+  });
+  if (error) throw new Error('Atomic DREAMKey subscription fulfilment failed.');
+}
+
+async function updateSubscriptionStatus(
+  supabase: SupabaseClient,
+  verified: VerifiedStripeSubscription,
+  status: 'pending' | 'active' | 'past_due' | 'cancelled' | 'ended',
+): Promise<void> {
+  const { data: updated, error } = await supabase
+    .from('dreamkey_subscriptions')
+    .update({
+      status,
+      stripe_customer_id: verified.stripeCustomerId,
+      stripe_subscription_id: verified.stripeSubscriptionId,
+      current_period_start: new Date(verified.periodStart * 1000).toISOString(),
+      current_period_end: new Date(verified.periodEnd * 1000).toISOString(),
+    })
+    .eq('id', verified.localSubscriptionId)
+    .eq('stripe_subscription_id', verified.stripeSubscriptionId)
+    .select('id')
+    .maybeSingle();
+  if (error || !updated) throw new Error('DREAMKey subscription status update failed.');
+}
+
+function mapStripeSubscriptionStatus(
+  subscription: Stripe.Subscription,
+  currentLocalStatus: string,
+): 'pending' | 'active' | 'past_due' | 'cancelled' | 'ended' {
+  if (subscription.status === 'canceled' || subscription.status === 'incomplete_expired') return 'ended';
+  if (subscription.cancel_at_period_end) return 'cancelled';
+  if (['past_due', 'unpaid', 'paused'].includes(subscription.status)) return 'past_due';
+  if (['active', 'trialing'].includes(subscription.status)) {
+    return currentLocalStatus === 'active' ? 'active' : 'pending';
+  }
+  return 'pending';
+}
+
+async function handleSubscriptionLifecycle(
+  stripe: Stripe,
+  supabase: SupabaseClient,
+  supplied: Stripe.Subscription,
+  deleted: boolean,
+): Promise<void> {
+  const verified = await verifyStripeSubscription(stripe, supabase, supplied.id);
+  await bindStripeSubscription(supabase, verified);
+  const { data, error } = await supabase
+    .from('dreamkey_subscriptions')
+    .select('status')
+    .eq('id', verified.localSubscriptionId)
+    .maybeSingle();
+  if (error || !data) throw new Error('Local subscription status lookup failed.');
+  await updateSubscriptionStatus(
+    supabase,
+    verified,
+    deleted ? 'ended' : mapStripeSubscriptionStatus(verified.subscription, data.status),
+  );
 }
 
 async function handleRequest(request: Request): Promise<Response> {
@@ -175,25 +403,59 @@ async function handleRequest(request: Request): Promise<Response> {
     } catch {
       return json(400, { ok: false, error: 'INVALID_SIGNATURE' });
     }
-
     if (!HANDLED_EVENTS.has(event.type)) return json(200, { ok: true });
 
-    const suppliedSession = event.data.object as Stripe.Checkout.Session;
-    if (!suppliedSession.id) return json(400, { ok: false, error: 'INVALID_EVENT' });
-
     const supabase = getSupabaseAdminClient();
-    const checkout = await verifyCheckoutSession(stripe, supabase, suppliedSession.id);
+    if (event.type === 'checkout.session.completed'
+      || event.type === 'checkout.session.async_payment_succeeded'
+      || event.type === 'checkout.session.async_payment_failed') {
+      const suppliedSession = event.data.object as Stripe.Checkout.Session;
+      if (!suppliedSession.id) return json(400, { ok: false, error: 'INVALID_EVENT' });
 
-    if (event.type === 'checkout.session.async_payment_failed') {
-      await markCheckoutFailed(supabase, checkout);
+      if (suppliedSession.mode === 'subscription') {
+        if (event.type !== 'checkout.session.async_payment_failed') {
+          const verified = await verifySubscriptionCheckout(stripe, supabase, suppliedSession.id);
+          await bindStripeSubscription(supabase, verified);
+        }
+        return json(200, { ok: true });
+      }
+
+      const checkout = await verifyOneTimeCheckoutSession(stripe, supabase, suppliedSession.id);
+      if (event.type === 'checkout.session.async_payment_failed') {
+        await markOneTimeCheckoutFailed(supabase, checkout);
+      } else if (checkout.session.payment_status === 'paid') {
+        await fulfilPaidOneTimeCheckout(supabase, checkout);
+      }
       return json(200, { ok: true });
     }
 
-    if (checkout.session.payment_status !== 'paid') {
-      return json(200, { ok: true, processing: true });
+    if (event.type === 'invoice.paid') {
+      const invoice = event.data.object as Stripe.Invoice;
+      if (!getInvoiceSubscriptionId(invoice)) return json(200, { ok: true });
+      await fulfilPaidSubscriptionInvoice(stripe, supabase, invoice.id, event.id);
+      return json(200, { ok: true });
     }
 
-    await fulfilPaidCheckout(supabase, checkout);
+    if (event.type === 'invoice.payment_failed') {
+      const invoice = event.data.object as Stripe.Invoice;
+      const subscriptionId = getInvoiceSubscriptionId(invoice);
+      if (!subscriptionId) return json(200, { ok: true });
+      const verified = await verifyStripeSubscription(stripe, supabase, subscriptionId);
+      await bindStripeSubscription(supabase, verified);
+      const failedStatus = ['canceled', 'incomplete_expired'].includes(verified.subscription.status)
+        ? 'ended'
+        : verified.subscription.cancel_at_period_end ? 'cancelled' : 'past_due';
+      await updateSubscriptionStatus(supabase, verified, failedStatus);
+      return json(200, { ok: true });
+    }
+
+    const subscription = event.data.object as Stripe.Subscription;
+    await handleSubscriptionLifecycle(
+      stripe,
+      supabase,
+      subscription,
+      event.type === 'customer.subscription.deleted',
+    );
     return json(200, { ok: true });
   } catch (error) {
     const configurationError = error instanceof DreamKeyServerConfigurationError;

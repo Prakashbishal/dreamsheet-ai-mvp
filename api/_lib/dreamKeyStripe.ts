@@ -35,7 +35,7 @@ export function getDreamSheetAppOrigin(): string {
 export function getStripeClient(): Stripe {
   const secretKey = requireEnvironmentValue('STRIPE_SECRET_KEY');
   if (!secretKey.startsWith('sk_test_')) {
-    throw new DreamKeyServerConfigurationError('Stage 1 requires a Stripe test-mode secret key.');
+    throw new DreamKeyServerConfigurationError('DREAMKey payments require a Stripe test-mode secret key.');
   }
   return new Stripe(secretKey);
 }
