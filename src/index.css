@@ -123,6 +123,8 @@
 
 .dreamkey-animation-key {
   position: absolute;
+  display: flex;
+  justify-content: center;
   left: 50%;
   top: calc(25% + 196px);
   width: 64px;

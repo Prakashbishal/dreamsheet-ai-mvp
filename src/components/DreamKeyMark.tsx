@@ -9,9 +9,9 @@ interface DreamKeyMarkProps {
 }
 
 const SIZE_CLASSES = {
-  sm: 'h-9 w-9 rounded-xl',
-  md: 'h-12 w-12 rounded-2xl',
-  lg: 'h-16 w-16 rounded-[1.4rem]',
+  sm: 'h-12 w-9 rounded-xl',
+  md: 'h-[3.25rem] w-10 rounded-xl',
+  lg: 'h-16 w-12 rounded-[1.25rem]',
 } as const;
 
 const DREAMKEY_BRAND_ASSET = '/brand/dreamkey-brand.png';
@@ -42,7 +42,7 @@ export function DreamKeyMark({
   return (
     <span
       className={cn(
-        'relative inline-flex shrink-0 overflow-hidden border bg-black shadow-md',
+        'relative inline-flex shrink-0 items-center justify-center overflow-hidden border bg-black shadow-md',
         tone === 'light'
           ? 'border-white/15 shadow-black/20'
           : 'border-emerald-800/20 shadow-emerald-950/10 dark:border-emerald-400/20 dark:shadow-black/30',
@@ -56,7 +56,7 @@ export function DreamKeyMark({
         width={1536}
         height={1024}
         alt={alt}
-        className="absolute left-1/2 top-0 h-auto w-[333%] max-w-none -translate-x-1/2"
+        className="block h-full w-auto max-w-none object-contain"
       />
     </span>
   );
