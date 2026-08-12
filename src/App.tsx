@@ -391,6 +391,7 @@ export default function App({
   const dreamKeyAccessRef = useRef(false);
   const [dreamKeyChecking, setDreamKeyChecking] = useState(Boolean(activeCloudDraftId));
   const [dreamKeyUnlocking, setDreamKeyUnlocking] = useState(false);
+  const [dreamKeyUnlockAnimationActive, setDreamKeyUnlockAnimationActive] = useState(false);
   const [dreamKeyBalance, setDreamKeyBalance] = useState<DreamKeyBalance | null>(null);
   const [dreamKeyMessage, setDreamKeyMessage] = useState('');
 
@@ -929,6 +930,7 @@ export default function App({
     let cancelled = false;
     dreamKeyAccessRef.current = false;
     setDreamKeyAccess(false);
+    setDreamKeyUnlockAnimationActive(false);
     setDreamKeyMessage('');
 
     if (!activeCloudDraftId) {
@@ -967,7 +969,7 @@ export default function App({
   }, [activeCloudDraftId]);
 
   const handleDreamKeyUnlock = async () => {
-    if (dreamKeyUnlocking || dreamKeyChecking) return;
+    if (dreamKeyUnlocking || dreamKeyChecking || dreamKeyUnlockAnimationActive) return;
     if (!activeCloudDraftId) {
       setDreamKeyMessage('Saving secure draft... Your unlock button will be ready shortly.');
       return;
@@ -987,11 +989,9 @@ export default function App({
       const hasAccess = entitlement.status === 'reserved' || entitlement.status === 'consumed';
       if (!hasAccess) throw new Error('DREAMKey reservation did not grant access.');
 
-      dreamKeyAccessRef.current = true;
       setDreamKeyMessage('DREAMKey secured');
-      setDreamKeyAccess(true);
+      setDreamKeyUnlockAnimationActive(true);
       setDreamKeyBalance(await getDreamKeyBalance().catch(() => null));
-      // TODO(DREAMKey animation): run the approved unlock sequence here, after server reservation succeeds and before Discovery is revealed.
     } catch (error) {
       console.warn('DREAMKey reservation failed.', error);
       const refreshedBalance = await getDreamKeyBalance().catch(() => null);
@@ -1009,6 +1009,13 @@ export default function App({
     } finally {
       setDreamKeyUnlocking(false);
     }
+  };
+
+  const handleDreamKeyUnlockAnimationComplete = () => {
+    if (!dreamKeyUnlockAnimationActive) return;
+    dreamKeyAccessRef.current = true;
+    setDreamKeyUnlockAnimationActive(false);
+    setDreamKeyAccess(true);
   };
 
   useEffect(() => {
@@ -3318,10 +3325,12 @@ export default function App({
                           availableKeys={dreamKeyBalance?.available ?? null}
                           checking={dreamKeyChecking}
                           unlocking={dreamKeyUnlocking}
+                          unlockAnimationActive={dreamKeyUnlockAnimationActive}
                           message={dreamKeyMessage}
                           draftReady={Boolean(activeCloudDraftId)}
                           onUnlockWithDreamKey={() => void handleDreamKeyUnlock()}
                           onGetDreamKey={() => onGetDreamKeys?.()}
+                          onUnlockAnimationComplete={handleDreamKeyUnlockAnimationComplete}
                         />
                       </div>
                     )}
