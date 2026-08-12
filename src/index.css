@@ -7,6 +7,238 @@
   --font-gothic: "Century Gothic", "CenturyGothic", "AppleGothic", "URW Gothic", sans-serif;
 }
 
+@keyframes dreamkey-flight {
+  0% { opacity: 1; transform: translate(-50%, 0) scale(0.86) rotate(0deg); }
+  14% { transform: translate(calc(-50% - 12px), -10px) scale(0.92) rotate(-2deg); }
+  48% { transform: translate(calc(-50% + 20px), -58px) scale(0.98) rotate(2deg); }
+  70% { transform: translate(calc(-50% + 6px), -108px) scale(1) rotate(0deg); }
+  80% { transform: translate(-50%, -122px) scale(1) rotate(0deg); }
+  89% { opacity: 1; transform: translate(-50%, -127px) scale(1) rotate(28deg); }
+  100% { opacity: 0; transform: translate(-50%, -127px) scale(0.88) rotate(28deg); }
+}
+
+@keyframes dreamkey-lock-open {
+  0%, 72% { transform: translateY(0) rotate(0deg); }
+  84%, 100% { transform: translate(-7px, -7px) rotate(-22deg); }
+}
+
+@keyframes dreamkey-pulse {
+  0%, 70% { opacity: 0; transform: translate(-50%, -50%) scale(0.35); }
+  76% { opacity: 0.55; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(3.2); }
+}
+
+@keyframes dreamkey-reveal-hole {
+  0%, 68% { --dreamkey-reveal-radius: 0%; opacity: 1; }
+  100% { --dreamkey-reveal-radius: 78%; opacity: 0; }
+}
+
+@keyframes dreamkey-preview-reveal {
+  0%, 65% { filter: blur(3px); opacity: 0.45; }
+  100% { filter: blur(0); opacity: 1; }
+}
+
+@keyframes dreamkey-animation-exit {
+  0%, 84% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes dreamkey-label-in {
+  0%, 72% { opacity: 0; transform: translate(-50%, 8px); }
+  84%, 100% { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes dreamkey-form-resolve {
+  0%, 12% { opacity: 0; transform: scaleY(0.1); }
+  34%, 100% { opacity: 1; transform: scaleY(1); }
+}
+
+.dreamkey-unlock-animation {
+  animation: dreamkey-animation-exit 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.9), rgb(255 255 255 / 0.72));
+  isolation: isolate;
+}
+
+.dreamkey-unlock-preview--revealing {
+  animation: dreamkey-preview-reveal 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dreamkey-unlock-reveal-veil {
+  --dreamkey-reveal-radius: 0%;
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% calc(25% + 170px),
+    transparent var(--dreamkey-reveal-radius),
+    rgb(255 255 255 / 0.96) calc(var(--dreamkey-reveal-radius) + 3%)
+  );
+  animation: dreamkey-reveal-hole 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dreamkey-animation-lock {
+  position: absolute;
+  left: 50%;
+  top: calc(25% + 115px);
+  width: 68px;
+  height: 78px;
+  transform: translateX(-50%);
+  filter: drop-shadow(0 12px 22px rgb(28 25 23 / 0.2));
+  z-index: 3;
+}
+
+.dreamkey-animation-lock__shackle {
+  position: absolute;
+  left: 15px;
+  top: 0;
+  width: 38px;
+  height: 42px;
+  border: 7px solid #1c1917;
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+  transform-origin: right bottom;
+  animation: dreamkey-lock-open 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.dreamkey-animation-lock__body {
+  position: absolute;
+  left: 4px;
+  top: 32px;
+  display: grid;
+  width: 60px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgb(52 211 153 / 0.45);
+  border-radius: 13px;
+  background: linear-gradient(145deg, #292524, #0c0a09);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+
+.dreamkey-animation-lock__keyhole {
+  width: 8px;
+  height: 18px;
+  border-radius: 9999px 9999px 4px 4px;
+  background: #34d399;
+  box-shadow: 0 0 14px rgb(52 211 153 / 0.55);
+}
+
+.dreamkey-animation-key {
+  position: absolute;
+  left: 50%;
+  top: calc(25% + 196px);
+  width: 64px;
+  height: 118px;
+  transform-origin: 50% 24px;
+  animation: dreamkey-flight 1.6s cubic-bezier(0.45, 0, 0.2, 1) both;
+  z-index: 4;
+}
+
+.dreamkey-animation-key > span:first-child {
+  position: relative;
+  z-index: 2;
+}
+
+.dreamkey-animation-key__shaft {
+  position: absolute;
+  left: 27px;
+  top: 54px;
+  width: 10px;
+  height: 56px;
+  border-radius: 0 0 6px 6px;
+  background: linear-gradient(90deg, #065f46, #34d399 55%, #047857);
+  box-shadow: 0 7px 16px rgb(6 95 70 / 0.28);
+  transform-origin: top;
+  animation: dreamkey-form-resolve 1.6s ease-out both;
+}
+
+.dreamkey-animation-key__tooth {
+  position: absolute;
+  left: 35px;
+  top: 91px;
+  width: 17px;
+  height: 9px;
+  border-radius: 0 3px 3px 0;
+  background: #059669;
+  transform-origin: left;
+  animation: dreamkey-form-resolve 1.6s ease-out both;
+}
+
+.dreamkey-unlock-pulse {
+  position: absolute;
+  left: 50%;
+  top: calc(25% + 170px);
+  width: 72px;
+  height: 72px;
+  border: 2px solid rgb(16 185 129 / 0.65);
+  border-radius: 9999px;
+  animation: dreamkey-pulse 1.6s ease-out both;
+  z-index: 2;
+}
+
+.dreamkey-animation-label {
+  position: absolute;
+  left: 50%;
+  top: calc(25% + 225px);
+  width: max-content;
+  max-width: calc(100% - 40px);
+  color: #065f46;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-align: center;
+  text-transform: uppercase;
+  animation: dreamkey-label-in 1.6s ease-out both;
+  z-index: 5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dreamkey-unlock-animation {
+    background: linear-gradient(to bottom, rgb(12 10 9 / 0.94), rgb(12 10 9 / 0.78));
+  }
+
+  .dreamkey-unlock-reveal-veil {
+    background: radial-gradient(
+      circle at 50% calc(25% + 170px),
+      transparent var(--dreamkey-reveal-radius),
+      rgb(12 10 9 / 0.97) calc(var(--dreamkey-reveal-radius) + 3%)
+    );
+  }
+
+  .dreamkey-animation-label {
+    color: #6ee7b7;
+  }
+}
+
+@property --dreamkey-reveal-radius {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dreamkey-unlock-animation,
+  .dreamkey-unlock-preview--revealing,
+  .dreamkey-unlock-reveal-veil,
+  .dreamkey-animation-lock__shackle,
+  .dreamkey-unlock-pulse,
+  .dreamkey-animation-label {
+    animation-duration: 180ms;
+  }
+
+  .dreamkey-animation-key {
+    animation: none;
+    opacity: 0;
+  }
+
+  .dreamkey-animation-key__shaft,
+  .dreamkey-animation-key__tooth {
+    animation: none;
+  }
+
+  .dreamkey-animation-lock__shackle {
+    transform: translate(-7px, -7px) rotate(-22deg);
+  }
+}
+
 @layer base {
   body {
     font-family: "Century Gothic", "CenturyGothic", "AppleGothic", "URW Gothic", sans-serif;

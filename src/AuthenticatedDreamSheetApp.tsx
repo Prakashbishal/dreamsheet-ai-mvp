@@ -3,6 +3,7 @@ import { LayoutDashboard, LogOut } from 'lucide-react';
 import App from './App';
 import { AuthScreen } from './components/AuthScreen';
 import { DreamSheetDashboard } from './components/DreamSheetDashboard';
+import { DreamKeyPlansPage } from './components/DreamKeyPlansPage';
 import { SavedDreamSheetView } from './components/SavedDreamSheetView';
 import { useAuth } from './contexts/AuthContext';
 import {
@@ -24,12 +25,13 @@ interface CloudDraftJourneyState {
   autosaveStopped: boolean;
 }
 
-type ProtectedView = 'dashboard' | 'journey' | 'saved';
+type ProtectedView = 'dashboard' | 'journey' | 'saved' | 'dreamkeys';
 type SavedIntent = 'view' | 'download' | 'email';
 
 type DreamSheetShellHistory =
   | { view: 'dashboard' }
   | { view: 'journey'; fromDashboard?: boolean }
+  | { view: 'dreamkeys'; fromDashboard?: boolean }
   | { view: 'saved'; savedId: string; fromDashboard?: boolean };
 
 function getShellHistoryState(state: unknown = window.history.state): DreamSheetShellHistory | null {
@@ -41,6 +43,9 @@ function getShellHistoryState(state: unknown = window.history.state): DreamSheet
   if (value.view === 'dashboard') return { view: 'dashboard' };
   if (value.view === 'journey') {
     return { view: 'journey', fromDashboard: value.fromDashboard === true };
+  }
+  if (value.view === 'dreamkeys') {
+    return { view: 'dreamkeys', fromDashboard: value.fromDashboard === true };
   }
   if (value.view === 'saved' && typeof value.savedId === 'string' && value.savedId) {
     return { view: 'saved', savedId: value.savedId, fromDashboard: value.fromDashboard === true };
@@ -66,8 +71,10 @@ function pushShellHistoryState(shell: DreamSheetShellHistory) {
 
 function getInitialProtectedView(): Exclude<ProtectedView, 'saved'> {
   if (typeof window === 'undefined') return 'dashboard';
+  const checkoutReturn = new URLSearchParams(window.location.search).get('dreamkey_checkout');
+  if (checkoutReturn === 'success' || checkoutReturn === 'cancelled') return 'dreamkeys';
   const shell = getShellHistoryState();
-  if (shell?.view === 'dashboard' || shell?.view === 'journey') return shell.view;
+  if (shell?.view === 'dashboard' || shell?.view === 'journey' || shell?.view === 'dreamkeys') return shell.view;
   if (shell?.view === 'saved') return 'dashboard';
   return sessionStorage.getItem(ACTIVE_CREATION_KEY) === 'true' ? 'journey' : 'dashboard';
 }
@@ -293,7 +300,7 @@ export default function AuthenticatedDreamSheetApp() {
   const handleCloudDraftCompleted = useCallback((journeyToken: string) => {
     const current = cloudDraftJourneyRef.current;
     if (!current || current.journeyToken !== journeyToken) return;
-    storeCloudDraftJourney({ ...current, draftId: null, autosaveStopped: true });
+    storeCloudDraftJourney({ ...current, autosaveStopped: true });
   }, [storeCloudDraftJourney]);
 
   const resetCloudDraftJourney = useCallback(() => {
@@ -401,6 +408,10 @@ export default function AuthenticatedDreamSheetApp() {
       replaceShellHistoryState(existingShell?.view === 'journey'
         ? existingShell
         : { view: 'journey' });
+    } else if (initialView === 'dreamkeys') {
+      replaceShellHistoryState(existingShell?.view === 'dreamkeys'
+        ? existingShell
+        : { view: 'dreamkeys' });
     } else {
       replaceShellHistoryState({ view: 'dashboard' });
     }
@@ -439,6 +450,16 @@ export default function AuthenticatedDreamSheetApp() {
         setSavedDreamSheet(null);
         setShellError('');
         setView('journey');
+        return;
+      }
+
+      if (shell.view === 'dreamkeys') {
+        savedLoadRequestRef.current += 1;
+        setOpeningSaved(false);
+        setOpeningDraft(false);
+        setSavedDreamSheet(null);
+        setShellError('');
+        setView('dreamkeys');
         return;
       }
 
@@ -500,6 +521,30 @@ export default function AuthenticatedDreamSheetApp() {
     void continueCloudDraft(id);
   };
 
+  const openDreamKeys = () => {
+    savedLoadRequestRef.current += 1;
+    setOpeningSaved(false);
+    setOpeningDraft(false);
+    setSavedDreamSheet(null);
+    setShellError('');
+    pushShellHistoryState({ view: 'dreamkeys', fromDashboard: view === 'dashboard' });
+    setView('dreamkeys');
+  };
+
+  const startOrResumeFromDreamKeys = () => {
+    const hasActiveJourney = sessionStorage.getItem(ACTIVE_CREATION_KEY) === 'true'
+      && cloudDraftJourneyRef.current?.autosaveStopped !== true;
+    if (!hasActiveJourney) {
+      startNewDreamSheet();
+      return;
+    }
+    activateCloudDraftJourney();
+    setSavedDreamSheet(null);
+    setShellError('');
+    pushShellHistoryState({ view: 'journey' });
+    setView('journey');
+  };
+
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-stone-950 text-sm font-bold uppercase tracking-widest text-emerald-400">Loading DREAMSheet AI…</div>;
   }
@@ -507,6 +552,10 @@ export default function AuthenticatedDreamSheetApp() {
 
   if (view === 'saved' && savedDreamSheet) {
     return <SavedDreamSheetView submission={savedDreamSheet} onBack={returnToDashboard} initialIntent={savedIntent} />;
+  }
+
+  if (view === 'dreamkeys') {
+    return <DreamKeyPlansPage onBack={returnToDashboard} onStartDreamSheet={startOrResumeFromDreamKeys} />;
   }
 
   if (view === 'journey') {
@@ -520,6 +569,7 @@ export default function AuthenticatedDreamSheetApp() {
           onCloudDraftCreated={handleCloudDraftCreated}
           onCloudDraftCompleted={handleCloudDraftCompleted}
           onCloudDraftReset={resetCloudDraftJourney}
+          onGetDreamKeys={openDreamKeys}
         />
         <nav aria-label="Account navigation" className="fixed bottom-4 right-4 z-[10050] flex gap-2 rounded-2xl border border-stone-200 bg-white/95 p-2 shadow-2xl backdrop-blur">
           <button type="button" onClick={returnToDashboard} className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100"><LayoutDashboard size={15} /> My DREAMSheets</button>
@@ -537,6 +587,7 @@ export default function AuthenticatedDreamSheetApp() {
         userEmail={user.email || 'Signed-in user'}
         refreshToken={dashboardRefreshToken}
         onCreate={startNewDreamSheet}
+        onOpenDreamKeys={openDreamKeys}
         onContinueDraft={openCloudDraft}
         onOpen={openSavedDreamSheet}
         onLogout={handleLogout}
