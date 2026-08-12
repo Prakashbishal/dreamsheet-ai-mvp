@@ -71,6 +71,8 @@ function pushShellHistoryState(shell: DreamSheetShellHistory) {
 
 function getInitialProtectedView(): Exclude<ProtectedView, 'saved'> {
   if (typeof window === 'undefined') return 'dashboard';
+  const checkoutReturn = new URLSearchParams(window.location.search).get('dreamkey_checkout');
+  if (checkoutReturn === 'success' || checkoutReturn === 'cancelled') return 'dreamkeys';
   const shell = getShellHistoryState();
   if (shell?.view === 'dashboard' || shell?.view === 'journey' || shell?.view === 'dreamkeys') return shell.view;
   if (shell?.view === 'saved') return 'dashboard';

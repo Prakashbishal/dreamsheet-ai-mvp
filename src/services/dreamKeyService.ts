@@ -2,6 +2,7 @@ import { DREAM_KEY_PLANS, type DreamKeyDisplayPlan, type DreamKeyPlanId } from '
 import { supabase } from '../lib/supabaseClient';
 import type {
   DreamKeyBalance,
+  DreamKeyCheckoutStatus,
   DreamKeyCodeResult,
   DreamKeyCodeType,
   DreamKeyCodeValidation,
@@ -22,6 +23,7 @@ export class DreamKeyIntegrationPendingError extends Error {
 
 export type DreamKeyServiceErrorCode =
   | 'AUTH_REQUIRED'
+  | 'CHECKOUT_FAILED'
   | 'CONFIGURATION'
   | 'INVALID_CODE'
   | 'QUERY_FAILED'
@@ -187,8 +189,83 @@ export async function getDreamKeyBalance(): Promise<DreamKeyBalance> {
   };
 }
 
-export async function beginDreamKeyCheckout(_planId: DreamKeyPlanId): Promise<never> {
-  throw new DreamKeyIntegrationPendingError('checkout');
+export async function beginDreamKeyCheckout(planId: DreamKeyPlanId): Promise<void> {
+  if (planId !== 'one-dreamkey') {
+    throw new DreamKeyIntegrationPendingError('checkout');
+  }
+
+  const client = await getAuthenticatedClient();
+  const { data, error } = await client.auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new DreamKeyServiceError('AUTH_REQUIRED', 'Please sign in again before starting checkout.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch('/api/create-dreamkey-checkout', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${data.session.access_token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ planId: 'dreamkey_single' }),
+    });
+  } catch {
+    throw new DreamKeyServiceError('CHECKOUT_FAILED', 'Secure checkout is temporarily unavailable. Please try again.');
+  }
+
+  let result: unknown;
+  try {
+    result = await response.json();
+  } catch {
+    result = null;
+  }
+  const value = asRecord(result);
+  const checkoutUrl = value?.url;
+  if (!response.ok || typeof checkoutUrl !== 'string') {
+    if (response.status === 401) {
+      throw new DreamKeyServiceError('AUTH_REQUIRED', 'Please sign in again before starting checkout.');
+    }
+    throw new DreamKeyServiceError('CHECKOUT_FAILED', 'Secure checkout is temporarily unavailable. Please try again.');
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(checkoutUrl);
+  } catch {
+    throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'Secure checkout returned an invalid destination.');
+  }
+  if (parsedUrl.protocol !== 'https:' || parsedUrl.hostname !== 'checkout.stripe.com') {
+    throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'Secure checkout returned an invalid destination.');
+  }
+
+  window.location.assign(parsedUrl.href);
+}
+
+export async function getDreamKeyCheckoutStatus(
+  checkoutSessionId: string,
+): Promise<DreamKeyCheckoutStatus | null> {
+  if (!checkoutSessionId || checkoutSessionId.length > 255) return null;
+
+  const client = await getAuthenticatedClient();
+  const { data, error } = await client
+    .from('dreamkey_purchases')
+    .select('status, keys_granted')
+    .eq('stripe_checkout_session_id', checkoutSessionId)
+    .maybeSingle();
+  if (error) {
+    throw new DreamKeyServiceError('QUERY_FAILED', 'Your DREAMKey payment status could not be checked.');
+  }
+  if (!data) return null;
+
+  const allowedStatuses = ['pending', 'paid', 'failed', 'cancelled', 'refunded'] as const;
+  if (!allowedStatuses.includes(data.status as typeof allowedStatuses[number])) {
+    throw new DreamKeyServiceError('UNEXPECTED_RESPONSE', 'The DREAMKey payment service returned an unexpected response.');
+  }
+  return {
+    status: data.status as typeof allowedStatuses[number],
+    keysGranted: getCount(data.keys_granted),
+  };
 }
 
 export async function getDreamKeyForSubmission(submissionId: string): Promise<DreamKeyEntitlement | null> {
@@ -258,6 +335,7 @@ export async function redeemDreamKeyCode(code: string): Promise<DreamKeyCodeResu
 
 export type {
   DreamKeyBalance,
+  DreamKeyCheckoutStatus,
   DreamKeyCodeResult,
   DreamKeyCodeValidation,
   DreamKeyEntitlement,

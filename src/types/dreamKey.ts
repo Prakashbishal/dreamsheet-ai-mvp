@@ -145,6 +145,11 @@ export interface DreamKeyBalance {
   reserved: number;
 }
 
+export interface DreamKeyCheckoutStatus {
+  status: DreamKeyPurchaseStatus;
+  keysGranted: number;
+}
+
 export type DreamKeyCodeValidation =
   | { valid: false }
   | {

@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, ShieldCheck, Sparkles } from 'lucide-react';
 import type { DreamKeyDisplayPlan, DreamKeyPlanId } from '../config/dreamKeyPlans';
 import {
   beginDreamKeyCheckout,
-  DreamKeyIntegrationPendingError,
   DreamKeyServiceError,
+  getDreamKeyBalance,
+  getDreamKeyCheckoutStatus,
   getDreamKeyPlans,
   redeemDreamKeyCode,
 } from '../services/dreamKeyService';
@@ -15,14 +16,143 @@ interface DreamKeyPlansPageProps {
   onBack: () => void;
 }
 
-const CHECKOUT_PENDING_MESSAGE = 'Secure checkout is being connected. No payment has been taken and no DREAMKey has been issued.';
+const CHECKOUT_PENDING_MESSAGE = 'This DREAMKey option is not available for checkout yet. No payment has been taken.';
+
+type CheckoutReturn =
+  | { outcome: 'none' }
+  | { outcome: 'cancelled' }
+  | { outcome: 'success'; sessionId: string | null };
+
+interface CheckoutConfirmation {
+  message: string;
+  confirmed: boolean;
+  retryable: boolean;
+}
+
+function readCheckoutReturn(): CheckoutReturn {
+  const parameters = new URLSearchParams(window.location.search);
+  const outcome = parameters.get('dreamkey_checkout');
+  if (outcome === 'cancelled') return { outcome: 'cancelled' };
+  if (outcome === 'success') {
+    return { outcome: 'success', sessionId: parameters.get('session_id') };
+  }
+  return { outcome: 'none' };
+}
+
+async function loadCheckoutConfirmation(sessionId: string): Promise<CheckoutConfirmation> {
+  const status = await getDreamKeyCheckoutStatus(sessionId);
+  if (!status || status.status === 'pending') {
+    return {
+      message: 'Payment confirmation is still processing. Your DREAMKey will appear automatically after the secure webhook completes.',
+      confirmed: false,
+      retryable: true,
+    };
+  }
+  if (status.status === 'paid' && status.keysGranted === 1) {
+    const balance = await getDreamKeyBalance();
+    return {
+      message: `Payment confirmed. Your account has ${balance.available} available DREAMKey${balance.available === 1 ? '' : 's'}.`,
+      confirmed: true,
+      retryable: false,
+    };
+  }
+  if (status.status === 'failed') {
+    return {
+      message: 'The payment was not completed. No DREAMKey has been issued.',
+      confirmed: false,
+      retryable: false,
+    };
+  }
+  return {
+    message: 'This checkout is not eligible for a new DREAMKey. Please contact support if you believe this is incorrect.',
+    confirmed: false,
+    retryable: false,
+  };
+}
 
 export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
   const plans = getDreamKeyPlans();
+  const [checkoutReturn] = useState<CheckoutReturn>(readCheckoutReturn);
   const [pendingPlanId, setPendingPlanId] = useState<DreamKeyPlanId | null>(null);
   const [code, setCode] = useState('');
   const [applyingCode, setApplyingCode] = useState(false);
-  const [commerceMessage, setCommerceMessage] = useState('');
+  const [commerceMessage, setCommerceMessage] = useState(() => {
+    if (checkoutReturn.outcome === 'cancelled') {
+      return 'Checkout was cancelled. No payment was confirmed and no DREAMKey has been issued.';
+    }
+    if (checkoutReturn.outcome === 'success') {
+      return checkoutReturn.sessionId
+        ? 'Payment completed. Confirming your DREAMKey…'
+        : 'Payment confirmation could not be checked because the checkout reference is missing.';
+    }
+    return '';
+  });
+  const [checkingPayment, setCheckingPayment] = useState(checkoutReturn.outcome === 'success' && Boolean(checkoutReturn.sessionId));
+  const [checkoutConfirmed, setCheckoutConfirmed] = useState(false);
+  const [checkoutRetryable, setCheckoutRetryable] = useState(false);
+
+  useEffect(() => {
+    if (checkoutReturn.outcome === 'none') return;
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete('dreamkey_checkout');
+    cleanUrl.searchParams.delete('session_id');
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`,
+    );
+  }, [checkoutReturn]);
+
+  useEffect(() => {
+    if (checkoutReturn.outcome !== 'success' || !checkoutReturn.sessionId) return;
+
+    let cancelled = false;
+    const checkUntilSettled = async () => {
+      setCheckingPayment(true);
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try {
+          const confirmation = await loadCheckoutConfirmation(checkoutReturn.sessionId!);
+          if (cancelled) return;
+          setCommerceMessage(confirmation.message);
+          setCheckoutConfirmed(confirmation.confirmed);
+          setCheckoutRetryable(confirmation.retryable);
+          if (!confirmation.retryable) return;
+        } catch (error) {
+          if (cancelled) return;
+          console.error('Could not confirm DREAMKey checkout status.', error);
+          setCommerceMessage('Payment confirmation is temporarily unavailable. No DREAMKey has been issued from this page. Please retry shortly.');
+          setCheckoutRetryable(true);
+          return;
+        }
+        await new Promise(resolve => window.setTimeout(resolve, 1500));
+      }
+      if (!cancelled) setCheckingPayment(false);
+    };
+
+    void checkUntilSettled().finally(() => {
+      if (!cancelled) setCheckingPayment(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [checkoutReturn]);
+
+  const retryCheckoutConfirmation = async () => {
+    if (checkoutReturn.outcome !== 'success' || !checkoutReturn.sessionId) return;
+    setCheckingPayment(true);
+    try {
+      const confirmation = await loadCheckoutConfirmation(checkoutReturn.sessionId);
+      setCommerceMessage(confirmation.message);
+      setCheckoutConfirmed(confirmation.confirmed);
+      setCheckoutRetryable(confirmation.retryable);
+    } catch (error) {
+      console.error('Could not confirm DREAMKey checkout status.', error);
+      setCommerceMessage('Payment confirmation is temporarily unavailable. No DREAMKey has been issued from this page. Please retry shortly.');
+      setCheckoutRetryable(true);
+    } finally {
+      setCheckingPayment(false);
+    }
+  };
 
   const handlePlanAction = async (plan: DreamKeyDisplayPlan) => {
     setCommerceMessage('');
@@ -31,15 +161,21 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
       setCommerceMessage('Teams & Coaches enquiries will be available when the commercial contact route is connected.');
       return;
     }
+    if (plan.id !== 'one-dreamkey') {
+      setCommerceMessage(CHECKOUT_PENDING_MESSAGE);
+      return;
+    }
 
     setPendingPlanId(plan.id);
     try {
       await beginDreamKeyCheckout(plan.id);
     } catch (error) {
-      if (!(error instanceof DreamKeyIntegrationPendingError)) {
+      if (error instanceof DreamKeyServiceError) {
+        setCommerceMessage(error.message);
+      } else {
         console.error('Could not begin DREAMKey checkout.', error);
+        setCommerceMessage('Secure checkout is temporarily unavailable. Please try again.');
       }
-      setCommerceMessage(CHECKOUT_PENDING_MESSAGE);
     } finally {
       setPendingPlanId(null);
     }
@@ -116,8 +252,20 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
         </div>
 
         {commerceMessage ? (
-          <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-center text-sm font-semibold leading-6 text-amber-950 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-100" role="status" aria-live="polite">
-            {commerceMessage}
+          <div className={checkoutConfirmed
+            ? 'mx-auto mt-8 max-w-3xl rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-center text-sm font-semibold leading-6 text-emerald-950 dark:border-emerald-300/20 dark:bg-emerald-300/10 dark:text-emerald-100'
+            : 'mx-auto mt-8 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-center text-sm font-semibold leading-6 text-amber-950 dark:border-amber-300/20 dark:bg-amber-300/10 dark:text-amber-100'} role="status" aria-live="polite">
+            <p>{commerceMessage}</p>
+            {checkoutReturn.outcome === 'success' && checkoutRetryable ? (
+              <button
+                type="button"
+                onClick={() => void retryCheckoutConfirmation()}
+                disabled={checkingPayment}
+                className="mt-3 rounded-lg border border-current/20 px-4 py-2 text-xs font-bold outline-none transition hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-white/5"
+              >
+                {checkingPayment ? 'Checking…' : 'Check again'}
+              </button>
+            ) : null}
           </div>
         ) : null}
 
@@ -204,7 +352,7 @@ export function DreamKeyPlansPage({ onBack }: DreamKeyPlansPageProps) {
         <div className="mt-10 flex flex-col items-center justify-center gap-3 text-center text-xs leading-5 text-stone-500 dark:text-stone-400 sm:flex-row">
           <span className="inline-flex items-center gap-2"><ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" /> No payment details are collected on this page.</span>
           <span aria-hidden="true" className="hidden text-stone-300 dark:text-stone-700 sm:inline">•</span>
-          <span className="inline-flex items-center gap-2"><Sparkles size={15} className="text-amber-600 dark:text-amber-400" /> Secure hosted checkout will be connected in a future stage.</span>
+          <span className="inline-flex items-center gap-2"><Sparkles size={15} className="text-amber-600 dark:text-amber-400" /> Single DREAMKey purchases use Stripe secure hosted checkout.</span>
         </div>
       </section>
     </main>

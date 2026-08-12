@@ -48,7 +48,7 @@ export const DREAM_KEY_PLANS: readonly DreamKeyDisplayPlan[] = [
       'Configurable monthly allowance',
       'Cancel or manage once billing launches',
     ],
-    ctaLabel: 'Choose Monthly',
+    ctaLabel: 'Monthly — Coming Soon',
   },
   {
     id: 'dreamkey-yearly',
@@ -65,7 +65,7 @@ export const DREAM_KEY_PLANS: readonly DreamKeyDisplayPlan[] = [
       'Allowance configurable before launch',
     ],
     featured: true,
-    ctaLabel: 'Choose Yearly',
+    ctaLabel: 'Yearly — Coming Soon',
   },
   {
     id: 'teams-coaches',
